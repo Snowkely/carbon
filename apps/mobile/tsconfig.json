@@ -1,0 +1,1 @@
+{"extends":"expo/tsconfig.base","compilerOptions":{"strict":true,"moduleResolution":"bundler","noUncheckedIndexedAccess":true,"types":["expo/types"]},"include":["**/*.ts","**/*.tsx"]}

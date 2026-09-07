@@ -1,0 +1,77 @@
+:root { --forest:#075b2a; --leaf:#3b8c45; --navy:#0d1f6d; --gold:#f3ab20; --canvas:#f7faf7; --ink:#101a38; --muted:#667085; --danger:#c62828; --border:#dfe7df; }
+* { box-sizing: border-box; }
+body { margin:0; color:var(--ink); background:var(--canvas); font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+button,input,select,textarea { font:inherit; }
+button { cursor:pointer; }
+.loginShell { min-height:100vh; display:grid; grid-template-columns:1.15fr .85fr; }
+.loginArt { padding:clamp(42px,8vw,110px); color:white; background:radial-gradient(circle at 20% 25%,#3b8c45 0 8%,transparent 9%),linear-gradient(145deg,#043e20,#075b2a 52%,#0d1f6d); display:flex; flex-direction:column; justify-content:center; }
+.loginArt h1 { font-size:clamp(40px,6vw,78px); line-height:.95; margin:0 0 24px; max-width:680px; }
+.loginArt p { max-width:580px; font-size:20px; opacity:.88; }
+.loginPanel { display:grid; place-items:center; padding:32px; }
+.loginCard { width:min(440px,100%); background:white; padding:34px; border:1px solid var(--border); border-radius:22px; box-shadow:0 24px 70px #082c1c20; }
+.shell { min-height:100vh; display:grid; grid-template-columns:250px 1fr; }
+.sidebar { background:#053c21; color:white; padding:24px 16px; position:sticky; top:0; height:100vh; overflow:auto; }
+.brand { font-size:21px; font-weight:900; letter-spacing:.04em; margin:0 8px 4px; }
+.brandSub { color:#bde0c4; margin:0 8px 28px; font-size:13px; }
+.navButton { width:100%; border:0; color:#d8eadc; background:transparent; text-align:left; border-radius:10px; padding:11px 12px; margin:2px 0; }
+.navButton:hover,.navButton.active { color:white; background:#ffffff18; }
+.main { min-width:0; }
+.topbar { height:72px; background:white; border-bottom:1px solid var(--border); padding:0 28px; display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:3; }
+.content { padding:28px; max-width:1500px; margin:auto; }
+h1,h2,h3 { margin-top:0; }
+h1 { font-size:29px; }
+.eyebrow { color:var(--forest); font-size:12px; letter-spacing:.12em; font-weight:900; text-transform:uppercase; }
+.muted { color:var(--muted); }
+.grid { display:grid; grid-template-columns:repeat(12,minmax(0,1fr)); gap:16px; }
+.span4 { grid-column:span 4; } .span6 { grid-column:span 6; } .span8 { grid-column:span 8; } .span12 { grid-column:span 12; }
+.card { background:white; border:1px solid var(--border); border-radius:16px; padding:18px; min-width:0; }
+.stat { font-size:30px; font-weight:900; margin:5px 0; }
+.stack { display:flex; flex-direction:column; gap:12px; }
+.row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+.between { justify-content:space-between; }
+label { font-weight:750; font-size:13px; }
+input,select,textarea { width:100%; border:1px solid #cdd9cf; background:white; border-radius:9px; padding:10px 11px; color:var(--ink); }
+textarea { min-height:90px; resize:vertical; }
+.button { border:0; border-radius:9px; padding:10px 14px; font-weight:800; background:var(--forest); color:white; }
+.button.secondary { color:var(--navy); background:white; border:1px solid #bcc8d9; }
+.button.danger { background:var(--danger); }
+.button:disabled { cursor:not-allowed; opacity:.45; }
+.pill { display:inline-flex; align-items:center; gap:6px; border-radius:99px; padding:5px 9px; color:#175629; background:#e9f5eb; font-size:12px; font-weight:800; }
+.pill.gray { color:#515867; background:#eff1f4; }
+.pill.red { color:#9b1c1c; background:#fff0ef; }
+.dot { width:8px; height:8px; background:#36a259; border-radius:50%; }
+.dot.off { background:#a8afb9; }
+.listItem { border:1px solid var(--border); padding:14px; border-radius:12px; }
+table { width:100%; border-collapse:collapse; font-size:14px; }
+th,td { padding:11px 10px; border-bottom:1px solid #edf1ed; text-align:left; vertical-align:top; }
+th { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.05em; }
+.tableWrap { overflow:auto; }
+.notice { border-left:4px solid var(--gold); background:#fff8e8; padding:12px 14px; border-radius:8px; }
+.error { color:#9b1c1c; background:#fff0ef; padding:10px; border-radius:8px; }
+.success { color:#175629; background:#e9f5eb; padding:10px; border-radius:8px; }
+.scopeCard { border-left:5px solid var(--leaf); }
+.missionControlCard { display:flex; flex-direction:column; gap:18px; }
+.missionControlHeader { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+.missionControlHeader h2 { margin:2px 0 0; }
+.missionBadges { display:flex; justify-content:flex-end; gap:7px; flex-wrap:wrap; }
+.missionStatus.unlocked { color:#175629; background:#e9f5eb; }
+.missionStatus.locked { color:#515867; background:#eff1f4; }
+.pill.comingSoon { color:#805b12; background:#fff3d6; }
+.missionMetrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+.missionMetrics div { min-width:0; padding:10px; border-radius:10px; background:#f7faf7; border:1px solid #edf1ed; }
+.missionMetrics span { display:block; min-height:32px; color:var(--muted); font-size:12px; line-height:1.35; }
+.missionMetrics strong { display:block; margin-top:5px; color:var(--ink); font-size:21px; }
+.missionUnlockButton { align-self:flex-start; }
+.scoreSection { margin-top:16px; }
+.scorePrecedence { display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
+.scorePrecedence span { color:var(--muted); }
+.scoreFacts { display:grid; grid-template-columns:minmax(120px,1fr) auto; align-items:baseline; gap:8px 14px; }
+.scoreFacts span { color:var(--muted); }
+.scoreFacts strong { text-align:right; }
+.scoreFactsWide { grid-template-columns:repeat(4,minmax(130px,1fr)); margin:16px 0; }
+.scoreFactsWide span { align-self:end; }
+.scoreFactsWide strong { text-align:left; font-size:20px; }
+.textButton { border:0; padding:0; background:transparent; color:var(--navy); font-weight:900; text-decoration:underline; text-underline-offset:3px; }
+.selectedScoreRow { background:#f0f8f1; }
+.adjustmentForm { margin-top:16px; padding-top:16px; border-top:1px solid var(--border); }
+@media(max-width:900px) { .loginShell{grid-template-columns:1fr}.loginArt{display:none}.shell{grid-template-columns:1fr}.sidebar{position:static;height:auto}.navButton{width:auto}.content{padding:18px}.span4,.span6,.span8{grid-column:span 12}.topbar{padding:0 18px}.scoreFactsWide{grid-template-columns:1fr 1fr} }

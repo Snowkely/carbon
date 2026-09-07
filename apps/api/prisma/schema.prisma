@@ -1,0 +1,752 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [citext]
+}
+
+enum AccountType {
+  STUDENT
+  TEACHER
+}
+
+enum AccountStatus {
+  ACTIVE
+  SUSPENDED
+  DISABLED
+}
+
+enum ReferenceStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum LoginCloseReason {
+  EXPLICIT_LOGOUT
+  EXPIRED
+  REVOKED
+}
+
+enum ContentStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum SourceType {
+  REAL_WORLD
+  SIMULATION
+  INTERNAL
+}
+
+enum QuestionType {
+  TAP
+  DRAG
+  ORDER
+  SC
+  MC
+  NUM
+  SLIDER
+  DECISION
+  REFLECTION
+}
+
+enum AnswerMode {
+  EXACT
+  MULTI_EXACT
+  NUMERIC
+  STRATEGY
+}
+
+enum WorkshopStatus {
+  DRAFT
+  READY
+  COMPLETED
+  ARCHIVED
+}
+
+enum WorkshopRole {
+  OWNER
+  INSTRUCTOR
+  VIEWER
+}
+
+enum SessionStatus {
+  SCHEDULED
+  ACTIVE
+  ENDED
+  CANCELLED
+}
+
+enum UnlockSource {
+  INITIAL
+  TEACHER
+}
+
+enum ParticipantSource {
+  AUTO_DISCOVERY
+}
+
+enum AttemptKind {
+  COURSE
+  MISSION_REPLAY
+}
+
+enum AttemptStatus {
+  IN_PROGRESS
+  COMPLETED
+  ABANDONED
+}
+
+enum QuestionResultStatus {
+  PENDING
+  FINALIZED
+}
+
+enum ResolutionMode {
+  INDEPENDENT
+  REVEALED
+  STRATEGY
+}
+
+enum ScoreTargetLevel {
+  QUESTION
+  MISSION
+  FINAL_TOTAL
+}
+
+enum ExportDataset {
+  STUDENT_SUMMARY
+  MISSION_SCORE
+  QUESTION_DETAIL
+  LOGIN_HISTORY
+}
+
+enum ExportFormat {
+  CSV
+  XLSX
+  PDF
+}
+
+enum ExportStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  EXPIRED
+}
+
+enum FeedbackFormStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum FeedbackQuestionType {
+  SINGLE_CHOICE
+  OPEN_TEXT
+}
+
+model School {
+  id               String                    @id @default(uuid()) @db.Uuid
+  code             String                    @unique @db.VarChar(50)
+  name             String                    @db.VarChar(200)
+  status           ReferenceStatus           @default(ACTIVE)
+  createdAt        DateTime                  @default(now()) @map("created_at") @db.Timestamptz
+  classes          SchoolClass[]
+  students         StudentProfile[]
+  teachers         TeacherProfile[]
+  workshops        Workshop[]
+  audiences        WorkshopAudience[]
+  sessionAudiences WorkshopSessionAudience[]
+
+  @@map("school")
+}
+
+model SchoolClass {
+  id               String                    @id @default(uuid()) @db.Uuid
+  schoolId         String                    @map("school_id") @db.Uuid
+  name             String                    @db.VarChar(100)
+  status           ReferenceStatus           @default(ACTIVE)
+  createdAt        DateTime                  @default(now()) @map("created_at") @db.Timestamptz
+  school           School                    @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  students         StudentProfile[]
+  audiences        WorkshopAudience[]
+  sessionAudiences WorkshopSessionAudience[]
+
+  @@unique([schoolId, name])
+  @@unique([id, schoolId])
+  @@index([schoolId, status])
+  @@map("school_class")
+}
+
+model UserAccount {
+  id           String          @id @default(uuid()) @db.Uuid
+  username     String          @unique @db.Citext
+  passwordHash String          @map("password_hash") @db.VarChar(255)
+  accountType  AccountType     @map("account_type")
+  status       AccountStatus   @default(ACTIVE)
+  createdAt    DateTime        @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime        @updatedAt @map("updated_at") @db.Timestamptz
+  student      StudentProfile?
+  teacher      TeacherProfile?
+  authSessions AuthSession[]
+  loginRecords LoginRecord[]
+
+  @@index([accountType, status])
+  @@map("user_account")
+}
+
+model StudentProfile {
+  userId             String                @id @map("user_id") @db.Uuid
+  schoolId           String                @map("school_id") @db.Uuid
+  classId            String                @map("class_id") @db.Uuid
+  studentId          String                @map("student_id") @db.VarChar(100)
+  name               String                @db.VarChar(150)
+  profileCompletedAt DateTime              @default(now()) @map("profile_completed_at") @db.Timestamptz
+  user               UserAccount           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  school             School                @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  schoolClass        SchoolClass           @relation(fields: [classId, schoolId], references: [id, schoolId], onDelete: Restrict)
+  participants       WorkshopParticipant[]
+  feedbackSubmissions FeedbackSubmission[]
+
+  @@unique([schoolId, studentId])
+  @@index([classId])
+  @@map("student_profile")
+}
+
+model TeacherProfile {
+  userId           String            @id @map("user_id") @db.Uuid
+  schoolId         String            @map("school_id") @db.Uuid
+  name             String            @db.VarChar(150)
+  user             UserAccount       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  school           School            @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  memberships      WorkshopTeacher[]
+  createdWorkshops Workshop[]        @relation("WorkshopCreator")
+  startedSessions  WorkshopSession[] @relation("SessionStarter")
+  unlocks          MissionUnlock[]
+  adjustments      ScoreAdjustment[]
+  exports          ExportRecord[]
+
+  @@index([schoolId])
+  @@map("teacher_profile")
+}
+
+model AuthSession {
+  id               String      @id @default(uuid()) @db.Uuid
+  userId           String      @map("user_id") @db.Uuid
+  refreshTokenHash String      @unique @map("refresh_token_hash") @db.VarChar(255)
+  expiresAt        DateTime    @map("expires_at") @db.Timestamptz
+  revokedAt        DateTime?   @map("revoked_at") @db.Timestamptz
+  createdAt        DateTime    @default(now()) @map("created_at") @db.Timestamptz
+  user             UserAccount @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@map("auth_session")
+}
+
+model LoginRecord {
+  id          String            @id @default(uuid()) @db.Uuid
+  userId      String            @map("user_id") @db.Uuid
+  loginAt     DateTime          @default(now()) @map("login_at") @db.Timestamptz
+  logoutAt    DateTime?         @map("logout_at") @db.Timestamptz
+  closeReason LoginCloseReason? @map("close_reason")
+  lastSeenAt  DateTime?         @map("last_seen_at") @db.Timestamptz
+  user        UserAccount       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, loginAt])
+  @@map("login_record")
+}
+
+model GameContentVersion {
+  id             String                  @id @default(uuid()) @db.Uuid
+  versionCode    String                  @unique @map("version_code") @db.VarChar(50)
+  status         ContentStatus
+  schemaVersion  String                  @map("schema_version") @db.VarChar(30)
+  checksum       String                  @unique @db.Char(64)
+  publishedAt    DateTime?               @map("published_at") @db.Timestamptz
+  createdAt      DateTime                @default(now()) @map("created_at") @db.Timestamptz
+  missions       MissionTemplate[]
+  screens        MissionScreenTemplate[]
+  questions      QuestionTemplate[]
+  gameScoring    GameScoringConfig?
+  missionScoring MissionScoringConfig[]
+  workshops      Workshop[]
+
+  @@map("game_content_version")
+}
+
+model ContentSource {
+  id            String             @id @default(uuid()) @db.Uuid
+  sourceType    SourceType         @map("source_type")
+  name          String             @db.VarChar(255)
+  url           String?
+  reportingYear Int?               @map("reporting_year")
+  geography     String?            @db.VarChar(100)
+  retrievalDate DateTime?          @map("retrieval_date") @db.Date
+  questions     QuestionTemplate[]
+
+  @@map("content_source")
+}
+
+model MissionTemplate {
+  id               String                  @id @default(uuid()) @db.Uuid
+  contentVersionId String                  @map("content_version_id") @db.Uuid
+  stableId         String                  @map("stable_id") @db.VarChar(20)
+  sequenceNo       Int                     @map("sequence_no") @db.SmallInt
+  titleCn          String                  @map("title_cn") @db.VarChar(255)
+  titleEn          String                  @map("title_en") @db.VarChar(255)
+  displayConfig    Json                    @map("display_config") @db.JsonB
+  contentVersion   GameContentVersion      @relation(fields: [contentVersionId], references: [id], onDelete: Restrict)
+  screens          MissionScreenTemplate[]
+  questions        QuestionTemplate[]
+  scoringConfigs   MissionScoringConfig[]
+  unlocks          MissionUnlock[]
+  missionAttempts  MissionAttempt[]
+
+  @@unique([contentVersionId, stableId])
+  @@unique([contentVersionId, sequenceNo])
+  @@unique([id, contentVersionId])
+  @@map("mission_template")
+}
+
+model MissionScreenTemplate {
+  id                 String             @id @default(uuid()) @db.Uuid
+  contentVersionId   String             @map("content_version_id") @db.Uuid
+  missionTemplateId  String             @map("mission_template_id") @db.Uuid
+  stableId           String             @map("stable_id") @db.VarChar(30)
+  sequenceNo         Int                @map("sequence_no") @db.SmallInt
+  displayConfig      Json               @map("display_config") @db.JsonB
+  inputConfig        Json               @map("input_config") @db.JsonB
+  progressionRuleRef String?            @map("progression_rule_ref") @db.VarChar(100)
+  contentVersion     GameContentVersion @relation(fields: [contentVersionId], references: [id], onDelete: Restrict)
+  mission            MissionTemplate    @relation(fields: [missionTemplateId, contentVersionId], references: [id, contentVersionId], onDelete: Restrict)
+  questions          QuestionTemplate[]
+  currentAttempts    MissionAttempt[]
+
+  @@unique([missionTemplateId, stableId])
+  @@unique([id, missionTemplateId, contentVersionId])
+  @@index([contentVersionId])
+  @@map("mission_screen_template")
+}
+
+model QuestionTemplate {
+  id                String                @id @default(uuid()) @db.Uuid
+  contentVersionId  String                @map("content_version_id") @db.Uuid
+  missionTemplateId String                @map("mission_template_id") @db.Uuid
+  screenTemplateId  String                @map("screen_template_id") @db.Uuid
+  stableId          String                @map("stable_id") @db.VarChar(30)
+  questionType      QuestionType          @map("question_type")
+  answerMode        AnswerMode            @map("answer_mode")
+  promptCn          String                @map("prompt_cn")
+  promptEn          String                @map("prompt_en")
+  options           Json?                 @db.JsonB
+  answerRule        Json                  @map("answer_rule") @db.JsonB
+  tolerance         Decimal?              @db.Decimal(18, 6)
+  baseScore         Decimal               @map("base_score") @db.Decimal(10, 2)
+  hintConfig        Json                  @map("hint_config") @db.JsonB
+  feedbackConfig    Json                  @map("feedback_config") @db.JsonB
+  sourceId          String?               @map("source_id") @db.Uuid
+  isSimulation      Boolean               @default(false) @map("is_simulation")
+  difficulty        Int?                  @db.SmallInt
+  contentVersion    GameContentVersion    @relation(fields: [contentVersionId], references: [id], onDelete: Restrict)
+  mission           MissionTemplate       @relation(fields: [missionTemplateId, contentVersionId], references: [id, contentVersionId], onDelete: Restrict)
+  screen            MissionScreenTemplate @relation(fields: [screenTemplateId, missionTemplateId, contentVersionId], references: [id, missionTemplateId, contentVersionId], onDelete: Restrict)
+  source            ContentSource?        @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  attempts          QuestionAttempt[]
+  results           QuestionResult[]
+
+  @@unique([contentVersionId, stableId])
+  @@unique([id, contentVersionId])
+  @@index([missionTemplateId, screenTemplateId])
+  @@map("question_template")
+}
+
+model GameScoringConfig {
+  id                  String             @id @default(uuid()) @db.Uuid
+  contentVersionId    String             @unique @map("content_version_id") @db.Uuid
+  policySchemaVersion String             @map("policy_schema_version") @db.VarChar(30)
+  scoreScaleMin       Decimal            @map("score_scale_min") @db.Decimal(5, 2)
+  scoreScaleMax       Decimal            @map("score_scale_max") @db.Decimal(5, 2)
+  missionWeights      Json               @map("mission_weights") @db.JsonB
+  levelBands          Json               @map("level_bands") @db.JsonB
+  roundingMode        String             @map("rounding_mode") @db.VarChar(30)
+  decimalPlaces       Int                @map("decimal_places") @db.SmallInt
+  checksum            String             @db.Char(64)
+  publishedAt         DateTime           @map("published_at") @db.Timestamptz
+  contentVersion      GameContentVersion @relation(fields: [contentVersionId], references: [id], onDelete: Restrict)
+
+  @@map("game_scoring_config")
+}
+
+model MissionScoringConfig {
+  id                   String             @id @default(uuid()) @db.Uuid
+  contentVersionId     String             @map("content_version_id") @db.Uuid
+  missionTemplateId    String             @map("mission_template_id") @db.Uuid
+  policySchemaVersion  String             @map("policy_schema_version") @db.VarChar(30)
+  componentDefinitions Json               @map("component_definitions") @db.JsonB
+  retryPolicy          Json               @map("retry_policy") @db.JsonB
+  assistancePolicy     Json               @map("assistance_policy") @db.JsonB
+  revealPolicy         Json               @map("reveal_policy") @db.JsonB
+  completionPolicy     Json               @map("completion_policy") @db.JsonB
+  adjustmentBounds     Json               @map("adjustment_bounds") @db.JsonB
+  roundingMode         String             @map("rounding_mode") @db.VarChar(30)
+  decimalPlaces        Int                @map("decimal_places") @db.SmallInt
+  checksum             String             @db.Char(64)
+  publishedAt          DateTime           @map("published_at") @db.Timestamptz
+  contentVersion       GameContentVersion @relation(fields: [contentVersionId], references: [id], onDelete: Restrict)
+  mission              MissionTemplate    @relation(fields: [missionTemplateId, contentVersionId], references: [id, contentVersionId], onDelete: Restrict)
+
+  @@unique([contentVersionId, missionTemplateId])
+  @@map("mission_scoring_config")
+}
+
+model Workshop {
+  id                 String             @id @default(uuid()) @db.Uuid
+  schoolId           String             @map("school_id") @db.Uuid
+  contentVersionId   String             @map("content_version_id") @db.Uuid
+  name               String             @db.VarChar(200)
+  status             WorkshopStatus     @default(DRAFT)
+  createdByTeacherId String             @map("created_by_teacher_id") @db.Uuid
+  createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime           @updatedAt @map("updated_at") @db.Timestamptz
+  school             School             @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  contentVersion     GameContentVersion @relation(fields: [contentVersionId], references: [id], onDelete: Restrict)
+  creator            TeacherProfile     @relation("WorkshopCreator", fields: [createdByTeacherId], references: [userId], onDelete: Restrict)
+  teachers           WorkshopTeacher[]
+  audiences          WorkshopAudience[]
+  sessions           WorkshopSession[]
+  exports            ExportRecord[]
+  feedbackSubmissions FeedbackSubmission[]
+
+  @@index([schoolId, status])
+  @@map("workshop")
+}
+
+model WorkshopTeacher {
+  workshopId String         @map("workshop_id") @db.Uuid
+  teacherId  String         @map("teacher_id") @db.Uuid
+  role       WorkshopRole
+  assignedAt DateTime       @default(now()) @map("assigned_at") @db.Timestamptz
+  workshop   Workshop       @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  teacher    TeacherProfile @relation(fields: [teacherId], references: [userId], onDelete: Restrict)
+
+  @@id([workshopId, teacherId])
+  @@index([teacherId, role])
+  @@map("workshop_teacher")
+}
+
+model WorkshopAudience {
+  id          String       @id @default(uuid()) @db.Uuid
+  workshopId  String       @map("workshop_id") @db.Uuid
+  schoolId    String       @map("school_id") @db.Uuid
+  classId     String?      @map("class_id") @db.Uuid
+  workshop    Workshop     @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  school      School       @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  schoolClass SchoolClass? @relation(fields: [classId, schoolId], references: [id, schoolId], onDelete: Restrict)
+
+  @@index([workshopId])
+  @@index([schoolId, classId])
+  @@map("workshop_audience")
+}
+
+model WorkshopSession {
+  id                 String                    @id @default(uuid()) @db.Uuid
+  workshopId         String                    @map("workshop_id") @db.Uuid
+  sessionNo          Int                       @map("session_no")
+  status             SessionStatus             @default(SCHEDULED)
+  scheduledAt        DateTime?                 @map("scheduled_at") @db.Timestamptz
+  startedByTeacherId String?                   @map("started_by_teacher_id") @db.Uuid
+  startedAt          DateTime?                 @map("started_at") @db.Timestamptz
+  endedAt            DateTime?                 @map("ended_at") @db.Timestamptz
+  createdAt          DateTime                  @default(now()) @map("created_at") @db.Timestamptz
+  workshop           Workshop                  @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  startedBy          TeacherProfile?           @relation("SessionStarter", fields: [startedByTeacherId], references: [userId], onDelete: Restrict)
+  audiences          WorkshopSessionAudience[]
+  participants       WorkshopParticipant[]
+  unlocks            MissionUnlock[]
+  feedbackSubmissions FeedbackSubmission[]
+
+  @@unique([workshopId, sessionNo])
+  @@unique([id, workshopId])
+  @@index([status, startedAt])
+  @@map("workshop_session")
+}
+
+model WorkshopSessionAudience {
+  id          String          @id @default(uuid()) @db.Uuid
+  sessionId   String          @map("session_id") @db.Uuid
+  schoolId    String          @map("school_id") @db.Uuid
+  classId     String?         @map("class_id") @db.Uuid
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz
+  session     WorkshopSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  school      School          @relation(fields: [schoolId], references: [id], onDelete: Restrict)
+  schoolClass SchoolClass?    @relation(fields: [classId, schoolId], references: [id, schoolId], onDelete: Restrict)
+
+  @@index([sessionId])
+  @@index([schoolId, classId])
+  @@map("workshop_session_audience")
+}
+
+model WorkshopParticipant {
+  id              String            @id @default(uuid()) @db.Uuid
+  sessionId       String            @map("session_id") @db.Uuid
+  studentId       String            @map("student_id") @db.Uuid
+  discoverySource ParticipantSource @default(AUTO_DISCOVERY) @map("discovery_source")
+  discoveredAt    DateTime          @default(now()) @map("discovered_at") @db.Timestamptz
+  lastActivityAt  DateTime?         @map("last_activity_at") @db.Timestamptz
+  session         WorkshopSession   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  student         StudentProfile    @relation(fields: [studentId], references: [userId], onDelete: Restrict)
+  attempts        Attempt[]
+
+  @@unique([sessionId, studentId])
+  @@index([studentId, lastActivityAt])
+  @@map("workshop_participant")
+}
+
+model MissionUnlock {
+  id                  String          @id @default(uuid()) @db.Uuid
+  sessionId           String          @map("session_id") @db.Uuid
+  missionTemplateId   String          @map("mission_template_id") @db.Uuid
+  unlockSource        UnlockSource    @map("unlock_source")
+  unlockedByTeacherId String?         @map("unlocked_by_teacher_id") @db.Uuid
+  unlockedAt          DateTime        @default(now()) @map("unlocked_at") @db.Timestamptz
+  session             WorkshopSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  mission             MissionTemplate @relation(fields: [missionTemplateId], references: [id], onDelete: Restrict)
+  unlockedBy          TeacherProfile? @relation(fields: [unlockedByTeacherId], references: [userId], onDelete: Restrict)
+
+  @@unique([sessionId, missionTemplateId])
+  @@index([missionTemplateId])
+  @@map("mission_unlock")
+}
+
+model Attempt {
+  id                    String                 @id @default(uuid()) @db.Uuid
+  participantId         String                 @map("participant_id") @db.Uuid
+  attemptNo             Int                    @map("attempt_no")
+  attemptKind           AttemptKind            @default(COURSE) @map("attempt_kind")
+  parentAttemptId       String?                @map("parent_attempt_id") @db.Uuid
+  status                AttemptStatus          @default(IN_PROGRESS)
+  systemTotalScore      Decimal?               @map("system_total_score") @db.Decimal(5, 2)
+  scoringPolicySnapshot Json?                  @map("scoring_policy_snapshot") @db.JsonB
+  startedAt             DateTime               @default(now()) @map("started_at") @db.Timestamptz
+  completedAt           DateTime?              @map("completed_at") @db.Timestamptz
+  participant           WorkshopParticipant    @relation(fields: [participantId], references: [id], onDelete: Restrict)
+  parent                Attempt?               @relation("AttemptReplay", fields: [parentAttemptId], references: [id], onDelete: Restrict)
+  replays               Attempt[]              @relation("AttemptReplay")
+  missionAttempts       MissionAttempt[]
+  adjustmentStream      ScoreAdjustmentStream? @relation("AttemptAdjustment")
+
+  @@unique([participantId, attemptNo])
+  @@index([status, startedAt])
+  @@map("attempt")
+}
+
+model MissionAttempt {
+  id                    String                 @id @default(uuid()) @db.Uuid
+  attemptId             String                 @map("attempt_id") @db.Uuid
+  missionTemplateId     String                 @map("mission_template_id") @db.Uuid
+  missionAttemptNo      Int                    @map("mission_attempt_no")
+  status                AttemptStatus          @default(IN_PROGRESS)
+  currentScreenId       String?                @map("current_screen_id") @db.Uuid
+  runtimeState          Json                   @default("{}") @map("runtime_state") @db.JsonB
+  systemScore           Decimal?               @map("system_score") @db.Decimal(5, 2)
+  scoringPolicySnapshot Json?                  @map("scoring_policy_snapshot") @db.JsonB
+  startedAt             DateTime               @default(now()) @map("started_at") @db.Timestamptz
+  completedAt           DateTime?              @map("completed_at") @db.Timestamptz
+  attempt               Attempt                @relation(fields: [attemptId], references: [id], onDelete: Restrict)
+  mission               MissionTemplate        @relation(fields: [missionTemplateId], references: [id], onDelete: Restrict)
+  currentScreen         MissionScreenTemplate? @relation(fields: [currentScreenId], references: [id], onDelete: Restrict)
+  questionAttempts      QuestionAttempt[]
+  questionResults       QuestionResult[]
+  adjustmentStream      ScoreAdjustmentStream? @relation("MissionAdjustment")
+
+  @@unique([attemptId, missionTemplateId, missionAttemptNo])
+  @@index([missionTemplateId, status])
+  @@map("mission_attempt")
+}
+
+model QuestionAttempt {
+  id                   String           @id @default(uuid()) @db.Uuid
+  missionAttemptId     String           @map("mission_attempt_id") @db.Uuid
+  questionTemplateId   String           @map("question_template_id") @db.Uuid
+  questionAttemptNo    Int              @map("question_attempt_no")
+  clientSubmissionId   String           @unique @map("client_submission_id") @db.Uuid
+  requestHash          String           @map("request_hash") @db.Char(64)
+  studentAnswer        Json             @map("student_answer") @db.JsonB
+  evaluatedResult      Json             @map("evaluated_result") @db.JsonB
+  candidateSystemScore Decimal          @map("candidate_system_score") @db.Decimal(10, 2)
+  questionSnapshot     Json             @map("question_snapshot") @db.JsonB
+  ruleSnapshot         Json             @map("rule_snapshot") @db.JsonB
+  feedbackSnapshot     Json             @map("feedback_snapshot") @db.JsonB
+  timeSpentMs          Int              @map("time_spent_ms")
+  hintUsage            Json             @map("hint_usage") @db.JsonB
+  resolutionMode       ResolutionMode   @default(INDEPENDENT) @map("resolution_mode")
+  revealUsed           Boolean          @default(false) @map("reveal_used")
+  independentlyCorrect Boolean          @default(false) @map("independently_correct")
+  submittedAt          DateTime         @default(now()) @map("submitted_at") @db.Timestamptz
+  missionAttempt       MissionAttempt   @relation(fields: [missionAttemptId], references: [id], onDelete: Restrict)
+  question             QuestionTemplate @relation(fields: [questionTemplateId], references: [id], onDelete: Restrict)
+  selectedBy           QuestionResult[] @relation("SelectedQuestionAttempt")
+
+  @@unique([missionAttemptId, questionTemplateId, questionAttemptNo])
+  @@unique([id, missionAttemptId, questionTemplateId])
+  @@index([missionAttemptId, submittedAt])
+  @@map("question_attempt")
+}
+
+model QuestionResult {
+  id                        String                 @id @default(uuid()) @db.Uuid
+  missionAttemptId          String                 @map("mission_attempt_id") @db.Uuid
+  questionTemplateId        String                 @map("question_template_id") @db.Uuid
+  status                    QuestionResultStatus   @default(PENDING)
+  selectedQuestionAttemptId String?                @map("selected_question_attempt_id") @db.Uuid
+  resolutionMode            ResolutionMode?        @map("resolution_mode")
+  v5BaseScore               Decimal                @map("v5_base_score") @db.Decimal(10, 2)
+  systemScore               Decimal?               @map("system_score") @db.Decimal(10, 2)
+  scoringConfigId           String                 @map("scoring_config_id") @db.Uuid
+  scoringConfigChecksum     String                 @map("scoring_config_checksum") @db.Char(64)
+  scoringPolicySnapshot     Json                   @map("scoring_policy_snapshot") @db.JsonB
+  createdAt                 DateTime               @default(now()) @map("created_at") @db.Timestamptz
+  finalizedAt               DateTime?              @map("finalized_at") @db.Timestamptz
+  missionAttempt            MissionAttempt         @relation(fields: [missionAttemptId], references: [id], onDelete: Restrict)
+  question                  QuestionTemplate       @relation(fields: [questionTemplateId], references: [id], onDelete: Restrict)
+  selectedAttempt           QuestionAttempt?       @relation("SelectedQuestionAttempt", fields: [selectedQuestionAttemptId], references: [id], onDelete: Restrict)
+  adjustmentStream          ScoreAdjustmentStream? @relation("QuestionAdjustment")
+
+  @@unique([missionAttemptId, questionTemplateId])
+  @@index([status, finalizedAt])
+  @@map("question_result")
+}
+
+model ScoreAdjustmentStream {
+  id                  String            @id @default(uuid()) @db.Uuid
+  targetLevel         ScoreTargetLevel  @map("target_level")
+  questionResultId    String?           @unique @map("question_result_id") @db.Uuid
+  missionAttemptId    String?           @unique @map("mission_attempt_id") @db.Uuid
+  attemptId           String?           @unique @map("attempt_id") @db.Uuid
+  currentAdjustmentId String?           @map("current_adjustment_id") @db.Uuid
+  version             BigInt            @default(0)
+  createdAt           DateTime          @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime          @updatedAt @map("updated_at") @db.Timestamptz
+  questionResult      QuestionResult?   @relation("QuestionAdjustment", fields: [questionResultId], references: [id], onDelete: Restrict)
+  missionAttempt      MissionAttempt?   @relation("MissionAdjustment", fields: [missionAttemptId], references: [id], onDelete: Restrict)
+  attempt             Attempt?          @relation("AttemptAdjustment", fields: [attemptId], references: [id], onDelete: Restrict)
+  adjustments         ScoreAdjustment[] @relation("AdjustmentStream")
+  currentAdjustment   ScoreAdjustment?  @relation("CurrentAdjustment", fields: [currentAdjustmentId], references: [id], onDelete: Restrict)
+
+  @@map("score_adjustment_stream")
+}
+
+model ScoreAdjustment {
+  id                     String                  @id @default(uuid()) @db.Uuid
+  streamId               String                  @map("stream_id") @db.Uuid
+  supersedesAdjustmentId String?                 @map("supersedes_adjustment_id") @db.Uuid
+  originalSystemScore    Decimal                 @map("original_system_score") @db.Decimal(10, 2)
+  adjustedScore          Decimal                 @map("adjusted_score") @db.Decimal(10, 2)
+  reason                 String
+  adjustedByTeacherId    String                  @map("adjusted_by_teacher_id") @db.Uuid
+  createdAt              DateTime                @default(now()) @map("created_at") @db.Timestamptz
+  stream                 ScoreAdjustmentStream   @relation("AdjustmentStream", fields: [streamId], references: [id], onDelete: Restrict)
+  supersedes             ScoreAdjustment?        @relation("AdjustmentSupersede", fields: [supersedesAdjustmentId], references: [id], onDelete: Restrict)
+  supersededBy           ScoreAdjustment[]       @relation("AdjustmentSupersede")
+  currentFor             ScoreAdjustmentStream[] @relation("CurrentAdjustment")
+  adjustedBy             TeacherProfile          @relation(fields: [adjustedByTeacherId], references: [userId], onDelete: Restrict)
+
+  @@unique([id, streamId])
+  @@index([streamId, createdAt])
+  @@map("score_adjustment")
+}
+
+model ExportRecord {
+  id                   String         @id @default(uuid()) @db.Uuid
+  workshopId           String         @map("workshop_id") @db.Uuid
+  requestedByTeacherId String         @map("requested_by_teacher_id") @db.Uuid
+  datasetType          ExportDataset  @map("dataset_type")
+  format               ExportFormat
+  filters              Json           @db.JsonB
+  status               ExportStatus
+  objectKey            String?        @map("object_key")
+  fileData             Bytes?         @map("file_data")
+  errorMessage         String?        @map("error_message")
+  createdAt            DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  completedAt          DateTime?      @map("completed_at") @db.Timestamptz
+  workshop             Workshop       @relation(fields: [workshopId], references: [id], onDelete: Restrict)
+  requestedBy          TeacherProfile @relation(fields: [requestedByTeacherId], references: [userId], onDelete: Restrict)
+
+  @@index([workshopId, status])
+  @@map("export_record")
+}
+
+model FeedbackForm {
+  id          String             @id @default(uuid()) @db.Uuid
+  stableId    String             @map("stable_id") @db.VarChar(40)
+  version     Int
+  status      FeedbackFormStatus @default(DRAFT)
+  createdAt   DateTime           @default(now()) @map("created_at") @db.Timestamptz
+  publishedAt DateTime?          @map("published_at") @db.Timestamptz
+  questions   FeedbackQuestion[]
+  submissions FeedbackSubmission[]
+
+  @@unique([stableId, version])
+  @@index([status, publishedAt])
+  @@map("feedback_form")
+}
+
+model FeedbackQuestion {
+  id               String               @id @default(uuid()) @db.Uuid
+  feedbackFormId   String               @map("feedback_form_id") @db.Uuid
+  stableId         String               @map("stable_id") @db.VarChar(40)
+  questionType     FeedbackQuestionType @map("question_type")
+  prompt           String
+  displayOrder     Int                  @map("display_order") @db.SmallInt
+  options          Json?                @db.JsonB
+  validationConfig Json                 @default("{}") @map("validation_config") @db.JsonB
+  feedbackForm     FeedbackForm         @relation(fields: [feedbackFormId], references: [id], onDelete: Restrict)
+  responses        FeedbackResponse[]
+
+  @@unique([feedbackFormId, stableId])
+  @@unique([feedbackFormId, displayOrder])
+  @@unique([id, feedbackFormId])
+  @@map("feedback_question")
+}
+
+model FeedbackSubmission {
+  id             String             @id @default(uuid()) @db.Uuid
+  feedbackFormId String             @map("feedback_form_id") @db.Uuid
+  studentId      String             @map("student_id") @db.Uuid
+  workshopId     String             @map("workshop_id") @db.Uuid
+  sessionId      String             @map("session_id") @db.Uuid
+  submittedAt    DateTime           @default(now()) @map("submitted_at") @db.Timestamptz
+  feedbackForm   FeedbackForm       @relation(fields: [feedbackFormId], references: [id], onDelete: Restrict)
+  student        StudentProfile     @relation(fields: [studentId], references: [userId], onDelete: Restrict)
+  workshop       Workshop           @relation(fields: [workshopId], references: [id], onDelete: Restrict)
+  session        WorkshopSession    @relation(fields: [sessionId, workshopId], references: [id, workshopId], onDelete: Restrict)
+  responses      FeedbackResponse[]
+
+  @@unique([feedbackFormId, studentId, sessionId])
+  @@unique([id, feedbackFormId])
+  @@index([sessionId, submittedAt])
+  @@map("feedback_submission")
+}
+
+model FeedbackResponse {
+  id                 String             @id @default(uuid()) @db.Uuid
+  submissionId       String             @map("submission_id") @db.Uuid
+  feedbackQuestionId String             @map("feedback_question_id") @db.Uuid
+  feedbackFormId     String             @map("feedback_form_id") @db.Uuid
+  selectedOption     String?            @map("selected_option")
+  otherText          String?            @map("other_text")
+  textResponse       String?            @map("text_response")
+  createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamptz
+  submission         FeedbackSubmission @relation(fields: [submissionId, feedbackFormId], references: [id, feedbackFormId], onDelete: Restrict)
+  question           FeedbackQuestion   @relation(fields: [feedbackQuestionId, feedbackFormId], references: [id, feedbackFormId], onDelete: Restrict)
+
+  @@unique([submissionId, feedbackQuestionId])
+  @@index([feedbackQuestionId, selectedOption])
+  @@map("feedback_response")
+}

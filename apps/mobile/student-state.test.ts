@@ -20,9 +20,10 @@ describe("Student runtime authentication", () => {
 describe("Student home refresh", () => {
   it("reloads the active Session and current Mission availability using GET-only requests", async () => {
     let available = false;
-    const request = vi.fn(async (path: string, options?: RequestInit) => {
+    const request = vi.fn(async (path: string, options?: RequestInit, _responseContract?: { allowEmptyBody?: boolean }) => {
       expect(options?.method).toBeUndefined();
       if (path === "/student/sessions/active") return [{ id: "session-1", workshopName: "Climate Lab" }];
+      if (path.endsWith("/final-result")) return null;
       return [{ missionTemplateId: "m2", accessState: available ? "AVAILABLE" : "BLOCKED_SESSION_UNLOCK", progressState: "NOT_STARTED", capabilities: { canStartAttempt: false } }];
     });
 
@@ -32,15 +33,39 @@ describe("Student home refresh", () => {
 
     expect(before.missions[0]?.accessState).toBe("BLOCKED_SESSION_UNLOCK");
     expect(after.missions[0]?.accessState).toBe("AVAILABLE");
+    expect(after.session).toEqual({ id: "session-1", workshopName: "Climate Lab" });
+    expect(after.finalResult).toBeNull();
     expect(request.mock.calls.map(([path]) => path)).toEqual([
       "/student/sessions/active", "/student/sessions/session-1/missions",
-      "/student/sessions/active", "/student/sessions/session-1/missions"
+      "/student/sessions/session-1/final-result",
+      "/student/sessions/active", "/student/sessions/session-1/missions",
+      "/student/sessions/session-1/final-result"
     ]);
     expect(request.mock.calls.some(([path]) => String(path).includes("/attempts"))).toBe(false);
+    expect(request.mock.calls.filter(([path]) => String(path).endsWith("/active")).every((call) => call[2]?.allowEmptyBody)).toBe(true);
+    expect(request.mock.calls.filter(([path]) => String(path).endsWith("/final-result")).every((call) => call[2]?.allowEmptyBody)).toBe(true);
   });
 
   it("clears stale Workshop and Mission state when there is no active Session", async () => {
-    await expect(fetchStudentHomeState(vi.fn().mockResolvedValue([]))).resolves.toEqual({ session: null, missions: [] });
+    await expect(fetchStudentHomeState(vi.fn().mockResolvedValue([]))).resolves.toEqual({ session: null, missions: [], finalResult: null });
+  });
+
+  it("treats an empty active-Session response as the normal Waiting state", async () => {
+    await expect(fetchStudentHomeState(vi.fn().mockResolvedValue(null))).resolves.toEqual({ session: null, missions: [], finalResult: null });
+  });
+
+  it("keeps the matching Session and Mission Map when the nullable final result has an empty response", async () => {
+    const request = vi.fn(async (path: string) => {
+      if (path.endsWith("/active")) return [{ id: "session-1", workshopName: "Climate Lab" }];
+      if (path.endsWith("/missions")) return [{ missionTemplateId: "m1", missionStableId: "M1", accessState: "AVAILABLE", progressState: "NOT_STARTED", capabilities: { canStartAttempt: true } }];
+      return null;
+    });
+
+    await expect(fetchStudentHomeState(request)).resolves.toMatchObject({
+      session: { id: "session-1", workshopName: "Climate Lab" },
+      missions: [{ missionStableId: "M1", accessState: "AVAILABLE" }],
+      finalResult: null
+    });
   });
 
   it("propagates request failures for visible UI handling", async () => {

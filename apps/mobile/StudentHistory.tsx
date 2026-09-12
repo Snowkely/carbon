@@ -2,6 +2,7 @@ import React from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { colors, formatScore } from "@carbon/ui-tokens";
 import { StudentHomeHeader } from "./StudentControls";
+import { MissionScoreBreakdown } from "./MissionScoreBreakdown";
 import { displayDate, displayStatus, type HistoryItem } from "./student-state";
 
 export function StudentHistory({ items, loading, error, onHome }: { items: HistoryItem[]; loading: boolean; error: string | null; onHome: () => void }) {
@@ -26,10 +27,15 @@ export function StudentHistory({ items, loading, error, onHome }: { items: Histo
             <Text style={styles.missionTitle}>{[mission.mission?.stableId, title].filter(Boolean).join(" · ") || "Mission"}</Text>
             <Text style={[styles.status, mission.status === "COMPLETED" ? styles.complete : styles.inProgress]}>{displayStatus(mission.status)}</Text>
             {typeof mission.systemScore === "number" && <Text style={styles.body}>System score: {formatScore(mission.systemScore)}/100.00</Text>}
+            {typeof mission.effectiveScore === "number" && <Text style={styles.body}>Effective score: {formatScore(mission.effectiveScore)}/100.00</Text>}
+            {mission.scoreBreakdown && <MissionScoreBreakdown breakdown={mission.scoreBreakdown} />}
+            {mission.roundBreakdown && <View style={styles.rounds}><Text style={styles.context}>Round 1 Policy Shock: {formatScore(mission.roundBreakdown.round1 ?? 0)}/50.00</Text><Text style={styles.context}>Round 2 Technology Shock: {formatScore(mission.roundBreakdown.round2 ?? 0)}/25.00</Text><Text style={styles.context}>Round 3 Integrated: {formatScore(mission.roundBreakdown.round3 ?? 0)}/25.00</Text></View>}
             {completedAt && <Text style={styles.context}>Completed: {completedAt}</Text>}
           </View>;
         })}
-        {typeof item.systemTotalScore === "number" && <Text style={styles.body}>Total system score: {formatScore(item.systemTotalScore)}</Text>}
+        {typeof item.calculatedFinalScore === "number" && <Text style={styles.body}>Calculated Final Carbon Market IQ: {formatScore(item.calculatedFinalScore)}/100.00</Text>}
+        {typeof item.finalOverride === "number" && <Text style={styles.body}>Final Total Override: {formatScore(item.finalOverride)}/100.00</Text>}
+        {typeof item.effectiveFinalScore === "number" && <Text style={styles.cardTitle}>Effective Final Total: {formatScore(item.effectiveFinalScore)}/100.00</Text>}
       </View>;
     })}
   </View>;
@@ -48,5 +54,6 @@ const styles = StyleSheet.create({
   complete: { color: colors.forest },
   body: { color: colors.muted, lineHeight: 21 },
   context: { color: colors.muted, fontSize: 12 },
+  rounds: { gap: 3, paddingTop: 3 },
   error: { color: "#a32121", lineHeight: 20 }
 });

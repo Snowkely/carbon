@@ -4,10 +4,12 @@ export type QuestionSubmissionResult = {
   attemptNumber: number;
   correct: boolean;
   score: number;
+  finalized?: boolean;
   feedback?: string;
   explanation?: string;
   revealAvailable?: boolean;
 };
+export type SubmissionPresentationContext = { answerMode?: string; questionType?: string };
 
 export type QuestionRevealResult = {
   score: number;
@@ -23,6 +25,23 @@ export function toggleDraftAnswer(current: unknown | undefined, next: unknown): 
   return current !== undefined && answersEqual(current, next) ? undefined : next;
 }
 
+export function updateQuestionDraft(type: string, current: unknown | undefined, next: unknown): unknown | undefined {
+  if (type === "NUM") return typeof next === "string" && !next.trim() ? undefined : next;
+  if (type !== "MC") return toggleDraftAnswer(current, next);
+  const selected = Array.isArray(current) ? current.map(String) : [];
+  const value = String(next);
+  const updated = selected.includes(value) ? selected.filter((item) => item !== value) : [...selected, value];
+  return updated.length ? updated : undefined;
+}
+
+export function moveOrderItem(order: readonly unknown[], index: number, direction: -1 | 1): unknown[] {
+  const target = index + direction;
+  if (index < 0 || index >= order.length || target < 0 || target >= order.length) return [...order];
+  const updated = [...order];
+  [updated[index], updated[target]] = [updated[target], updated[index]];
+  return updated;
+}
+
 export function setQuestionDraft(
   drafts: Record<string, unknown>,
   questionId: string,
@@ -33,6 +52,11 @@ export function setQuestionDraft(
     return remaining;
   }
   return { ...drafts, [questionId]: answer };
+}
+
+export function clearQuestionEntry<T>(entries: Record<string, T>, questionId: string): Record<string, T> {
+  const { [questionId]: _removed, ...remaining } = entries;
+  return remaining;
 }
 
 export function toggleValueChainNode(selectedNodes: string[], nodeId: string): string[] {
@@ -56,11 +80,15 @@ export async function commitValueChainDraft(
   }
 }
 
-export function formatQuestionSubmissionResult(result: QuestionSubmissionResult, baseScore: number): string {
-  if (result.correct) {
-    return `Correct\n${formatScore(result.score)} / ${formatScore(baseScore)} pts\nAttempt ${result.attemptNumber} submitted`;
+export function formatQuestionSubmissionResult(result: QuestionSubmissionResult, baseScore: number, context: SubmissionPresentationContext = {}): string {
+  if (context.answerMode === "STRATEGY") {
+    const status = context.questionType === "REFLECTION" ? "Reasoning evaluated" : "Strategy evaluated";
+    return `${status}\n${formatScore(result.score)} / ${formatScore(baseScore)} pts\nAttempt ${result.attemptNumber} submitted${result.feedback ? `\n${result.feedback}` : ""}${result.explanation ? `\n${result.explanation}` : ""}`;
   }
-  return `Incorrect\nAttempt ${result.attemptNumber} submitted${result.feedback ? `\n${result.feedback}` : ""}${result.revealAvailable ? "\nReveal is now available." : ""}`;
+  if (result.correct) {
+    return `Correct\n${formatScore(result.score)} / ${formatScore(baseScore)} pts\nAttempt ${result.attemptNumber} submitted${result.explanation ? `\n${result.explanation}` : ""}`;
+  }
+  return `Incorrect\nAttempt ${result.attemptNumber} submitted${result.feedback ? `\n${result.feedback}` : ""}${result.explanation ? `\n${result.explanation}` : ""}${result.revealAvailable ? "\nReveal is now available." : ""}`;
 }
 
 export function formatQuestionRevealResult(result: QuestionRevealResult, baseScore: number): string {

@@ -42,9 +42,13 @@ describe("MissionHeader", () => {
     const back = descendants(tree).find((node) => node.props.accessibilityLabel === "Back to Home");
 
     expect(textContent(tree)).toContain(MISSION_BACK_LABEL);
-    expect(textContent(tree)).toContain("MISSION 1 · STEP 2/7");
+    expect(textContent(tree)).toContain("M1 · STEP 2/7");
 
     (back?.props.onPress as () => void)();
     expect(onBack).toHaveBeenCalledOnce();
+  });
+
+  it("shows Mission 4's current six-screen progress", () => {
+    expect(textContent(MissionHeader({ onBack: vi.fn(), missionId: "M4", step: 5, totalSteps: 6 }))).toContain("M4 · STEP 5/6");
   });
 });

@@ -12,10 +12,20 @@ export type StudentMission = {
   capabilities: { canStartAttempt: boolean; canContinueAttempt?: boolean };
 };
 
-export type StudentHomeState = { session: StudentSession | null; missions: StudentMission[] };
-export type StudentRequest = (path: string, options?: RequestInit) => Promise<unknown>;
+export type StudentFinalResult = {
+  calculatedScore: number;
+  effectiveScore: number;
+  finalOverride?: number | null;
+  level: string;
+  topStrength: string;
+  conceptToReview: string;
+  missionScores: Record<string, number>;
+  m6RoundBreakdown: { round1: number; round2: number; round3: number; total: number };
+};
+export type StudentHomeState = { session: StudentSession | null; missions: StudentMission[]; finalResult: StudentFinalResult | null };
+export type StudentRequest = (path: string, options?: RequestInit, responseContract?: { allowEmptyBody?: boolean }) => Promise<unknown>;
 
-export type StudentScreen = "login" | "profile" | "home" | "mission" | "history" | "feedback";
+export type StudentScreen = "login" | "profile" | "home" | "mission" | "result" | "history" | "feedback";
 
 export function initializeStudentRuntime(): { token: null; screen: "login" } {
   return { token: null, screen: "login" };
@@ -26,12 +36,15 @@ export function screenAfterLogin(profileRequired: boolean): "profile" | "home" {
 }
 
 export async function fetchStudentHomeState(request: StudentRequest): Promise<StudentHomeState> {
-  const activeResponse = await request("/student/sessions/active");
+  const activeResponse = await request("/student/sessions/active", undefined, { allowEmptyBody: true });
   const activeSessions = Array.isArray(activeResponse) ? activeResponse as StudentSession[] : [];
   const session = activeSessions[0] ?? null;
-  if (!session) return { session: null, missions: [] };
-  const missionResponse = await request(`/student/sessions/${session.id}/missions`);
-  return { session, missions: Array.isArray(missionResponse) ? missionResponse as StudentMission[] : [] };
+  if (!session) return { session: null, missions: [], finalResult: null };
+  const [missionResponse, finalResponse] = await Promise.all([
+    request(`/student/sessions/${session.id}/missions`),
+    request(`/student/sessions/${session.id}/final-result`, undefined, { allowEmptyBody: true })
+  ]);
+  return { session, missions: Array.isArray(missionResponse) ? missionResponse as StudentMission[] : [], finalResult: finalResponse && typeof finalResponse === "object" && !Array.isArray(finalResponse) ? finalResponse as StudentFinalResult : null };
 }
 
 export function userFacingError(error: unknown): string {
@@ -58,6 +71,9 @@ export type HistoryMissionAttempt = {
   id: string;
   status?: string | null;
   systemScore?: number | null;
+  effectiveScore?: number | null;
+  scoreBreakdown?: MissionScoreBreakdownDto | null;
+  roundBreakdown?: { round1?: number; round2?: number; round3?: number; total?: number } | null;
   completedAt?: string | null;
   mission?: { stableId?: string | null; titleEn?: string | null; titleCn?: string | null } | null;
 };
@@ -67,6 +83,9 @@ export type HistoryItem = {
   attemptNo?: number | null;
   status?: string | null;
   systemTotalScore?: number | null;
+  calculatedFinalScore?: number | null;
+  effectiveFinalScore?: number | null;
+  finalOverride?: number | null;
   startedAt?: string | null;
   completedAt?: string | null;
   session?: { id?: string; status?: string | null; workshop?: { id?: string; name?: string | null } | null } | null;
@@ -104,3 +123,4 @@ export function buildFeedbackResponses(questions: Array<{ stableId: string }>, d
 export function backToStudentHome(): "home" {
   return "home";
 }
+import type { MissionScoreBreakdownDto } from "@carbon/contracts";

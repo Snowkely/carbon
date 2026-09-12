@@ -1,10 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatScore } from "@carbon/ui-tokens";
+import { createUnauthorizedCoordinator } from "@carbon/contracts";
 import ScoreWorkspace from "./score-workspace";
 import { GradebookSelection, navigateToGradebook } from "./score-state";
 import { fetchTeacherDashboard, initializeTeacherRuntime, teacherMissionPresentation, teacherMissionUnlockMessage, unlockTeacherMission } from "./teacher-state";
+import { isHandledTeacherUnauthorized, teacherApiRequest } from "./teacher-api";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/v1";
 const INITIAL_TEACHER_RUNTIME = initializeTeacherRuntime();
@@ -27,8 +29,10 @@ function Login({onLogin}:{onLogin:(token:string)=>void}) {
 
 function Console({token,onLogout}:{token:string;onLogout:()=>void}) {
   const [view,setView]=useState<View>("Dashboard"); const [workshops,setWorkshops]=useState<Workshop[]>([]); const [selectedId,setSelectedId]=useState(""); const [message,setMessage]=useState(""); const [gradebookSelection,setGradebookSelection]=useState<GradebookSelection|null>(null);
-  const request=useCallback(async(path:string,options:RequestInit={})=>{const response=await fetch(`${API}${path}`,{...options,headers:{"Content-Type":"application/json",Authorization:`Bearer ${token}`,...options.headers}});const data=response.status===204?null:await response.json();if(response.status===401){onLogout();throw new Error("Session expired");}if(!response.ok)throw new Error(`${data?.error?.code??"REQUEST_FAILED"}: ${data?.error?.message??"Request failed"}`);return data;},[token,onLogout]);
-  const load=useCallback(async()=>{try{const visible=await fetchTeacherDashboard<Workshop>(request);setWorkshops(visible);setSelectedId((current)=>visible.some((item)=>item.id===current)?current:visible[0]?.id??"");}catch(error){setMessage(String(error));}},[request]);
+  const unauthorized=useRef(createUnauthorizedCoordinator());
+  const handleUnauthorized=useCallback(()=>unauthorized.current.notify((confirm)=>{window.alert("Session expired\n\nYour session has expired. Please sign in again.");confirm()},onLogout),[onLogout]);
+  const request=useCallback((path:string,options:RequestInit={})=>teacherApiRequest(API,token,path,options,handleUnauthorized),[token,handleUnauthorized]);
+  const load=useCallback(async()=>{try{const visible=await fetchTeacherDashboard<Workshop>(request);setWorkshops(visible);setSelectedId((current)=>visible.some((item)=>item.id===current)?current:visible[0]?.id??"");}catch(error){if(!isHandledTeacherUnauthorized(error))setMessage(String(error));}},[request]);
   useEffect(()=>{void load()},[load]);
   const selected=workshops.find((item)=>item.id===selectedId)??null; const session=selected?.sessions[0]??null;
   const navigation:View[]=["Dashboard","Workshops","Session Control","Mission Control","Live Monitor","Students","Gradebook","Feedback","Question Bank"];

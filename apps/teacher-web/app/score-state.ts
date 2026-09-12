@@ -30,7 +30,7 @@ export function scorePagePolicy(gradebook: boolean, role: string | null) {
     canAdjustQuestion: canCreateAdjustments,
     canAdjustMission: canCreateAdjustments,
     canAdjustFinalTotal: canCreateAdjustments,
-    showFinalScoreSection: gradebook
+    showFinalScoreSection: true
   };
 }
 
@@ -82,6 +82,7 @@ export function effectiveMissionScore(mission: any): number | null {
 export function effectiveFinalScore(attempt: any): number | null {
   const finalOverride = currentOverride(attempt.adjustmentStream);
   if (finalOverride !== null) return finalOverride;
+  if (attempt.calculatedFinalScore !== null && attempt.calculatedFinalScore !== undefined) return Number(attempt.calculatedFinalScore);
   return attempt.systemTotalScore === null || attempt.systemTotalScore === undefined ? null : Number(attempt.systemTotalScore);
 }
 

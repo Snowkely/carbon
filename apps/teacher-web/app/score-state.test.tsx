@@ -61,6 +61,23 @@ describe("Teacher score adjustment presentation", () => {
     expect(html).toContain("Adjust Mission");
   });
 
+  it("renders the Mission 5 authoritative rubric and explains Question Override isolation", () => {
+    const mission = { id: "ma5", systemScore: 100, questionAdjustedScore: 100, effectiveScore: 100, mission: { stableId: "M5" }, adjustmentStream: null, rubricBreakdown: { compliance: 40, costLogic: 30, position: 20, reasoning: 10 } };
+    const html = renderToStaticMarkup(<MissionScorePanel mission={mission} mutable={false} adjustmentOpen={false} onAdjust={vi.fn()} />);
+    expect(html).toContain("Authoritative strategy rubric");
+    expect(html).toContain("40.00 / 40.00");
+    expect(html).toContain("30.00 / 30.00");
+    expect(html).toContain("20.00 / 20.00");
+    expect(html).toContain("10.00 / 10.00");
+    expect(html).toContain("Question Overrides annotate question evidence but do not rewrite");
+  });
+
+  it("renders a generic normalized M3 breakdown without presenting Bonus as earnable", () => {
+    const mission = { id: "ma3", systemScore: 100, questionAdjustedScore: 100, effectiveScore: 100, mission: { stableId: "M3" }, adjustmentStream: null, scoreBreakdown: { missionStableId:"M3",components:[{stableId:"CONCEPT",earned:45,maximum:45,status:"ACTIVE"},{stableId:"CASES",earned:35,maximum:35,status:"ACTIVE"},{stableId:"MISCONCEPTION_CHALLENGE",earned:15,maximum:15,status:"ACTIVE"},{stableId:"BONUS",earned:null,maximum:5,status:"INACTIVE_UNMAPPED"}],rawActiveTotal:95,rawActiveMaximum:95,normalizedTotal:100,normalizedMaximum:100,normalizationApplied:true } };
+    const html = renderToStaticMarkup(<MissionScorePanel mission={mission} mutable={false} adjustmentOpen={false} onAdjust={vi.fn()} />);
+    expect(html).toContain("Mission Score Breakdown"); expect(html).toContain("Inactive — not earnable"); expect(html).toContain("Active raw structure: 95.00 / 95.00"); expect(html).toContain("100.00 / 100.00");
+  });
+
   it.each(["OWNER", "INSTRUCTOR"])("shows Adjust Mission to %s", (role) => {
     const mission = { id: "ma1", systemScore: 84.16, questionAdjustedScore: 83.66, effectiveScore: 83.66, mission: { stableId: "M1" }, adjustmentStream: null };
     const html = renderToStaticMarkup(<MissionScorePanel mission={mission} mutable={canAdjustScores(role)} adjustmentOpen={false} onAdjust={vi.fn()} />);
@@ -200,7 +217,7 @@ describe("Students and Gradebook responsibility separation", () => {
       canAdjustQuestion: false,
       canAdjustMission: false,
       canAdjustFinalTotal: false,
-      showFinalScoreSection: false
+      showFinalScoreSection: true
     });
   });
 

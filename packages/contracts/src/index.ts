@@ -42,3 +42,54 @@ export interface MissionAccessDto {
   capabilities: { canStartAttempt: boolean; canContinueAttempt: boolean; canSubmitAnswer: boolean };
 }
 export interface SafeQuestionDto { questionTemplateId: string; stableId: string; type: string; promptCn: string; promptEn: string; options: unknown; baseScore: number; attemptsUsed: number; revealAvailable: boolean; finalized: boolean; }
+
+export type MissionScoreComponentStatus = "ACTIVE" | "INACTIVE_UNMAPPED";
+export interface MissionScoreComponentDto {
+  stableId: string;
+  earned: number | null;
+  maximum: number;
+  status: MissionScoreComponentStatus;
+}
+export interface MissionScoreBreakdownDto {
+  missionStableId: string;
+  components: MissionScoreComponentDto[];
+  rawActiveTotal: number;
+  rawActiveMaximum: number;
+  normalizedTotal: number;
+  normalizedMaximum: 100;
+  normalizationApplied: boolean;
+}
+
+const missionScoreComponentLabels: Record<string, string> = {
+  SCAN: "Scan", CARDS: "Cards", BOUNDARY: "Boundary", REASONING_ASSISTANCE: "Reasoning / Low-hint",
+  UNIT_MATCHING: "Unit", FACTOR_MATCHING: "Factor", CALCULATION: "Calculation", HOTSPOT_REASONING: "Hotspot",
+  COMPANY_COMPARISON: "Company Comparison", INTENSITY_REASONING: "Intensity", CONCEPT: "Concept", CASES: "Cases",
+  MISCONCEPTION_CHALLENGE: "Misconception", BONUS: "Bonus", PROCESS: "Process", POSITION_CALCULATION: "Position",
+  TRADE: "Trade", COMPLIANCE_REASONING: "Compliance", COMPLIANCE: "Compliance", COST_LOGIC: "Cost Logic",
+  POSITION: "Position", REASONING: "Reasoning", ROUND_1_POLICY_SHOCK: "Round 1 Policy Shock",
+  ROUND_2_TECHNOLOGY_SHOCK: "Round 2 Technology Shock", ROUND_3_INTEGRATED: "Round 3 Integrated"
+};
+export function missionScoreComponentLabel(stableId: string): string {
+  return missionScoreComponentLabels[stableId] ?? stableId.replaceAll("_", " ").toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+export type UnauthorizedCoordinator = {
+  notify(showConfirmation: (confirm: () => void) => void, onConfirmed: () => void | Promise<void>): boolean;
+  reset(): void;
+};
+export function createUnauthorizedCoordinator(): UnauthorizedCoordinator {
+  let state: "READY" | "PROMPTING" | "CONFIRMED" = "READY";
+  return {
+    notify(showConfirmation, onConfirmed) {
+      if (state !== "READY") return false;
+      state = "PROMPTING";
+      showConfirmation(() => {
+        if (state !== "PROMPTING") return;
+        state = "CONFIRMED";
+        void onConfirmed();
+      });
+      return true;
+    },
+    reset() { state = "READY"; }
+  };
+}

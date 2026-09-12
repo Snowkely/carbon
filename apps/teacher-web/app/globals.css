@@ -74,4 +74,8 @@ th { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacin
 .textButton { border:0; padding:0; background:transparent; color:var(--navy); font-weight:900; text-decoration:underline; text-underline-offset:3px; }
 .selectedScoreRow { background:#f0f8f1; }
 .adjustmentForm { margin-top:16px; padding-top:16px; border-top:1px solid var(--border); }
+.missionBreakdown { margin:16px 0; padding:16px; border:1px solid var(--border); border-radius:12px; background:#f7faf7; }
+.breakdownRow { display:flex; justify-content:space-between; gap:18px; padding:7px 0; }
+.breakdownRow small { display:block; margin-top:2px; color:var(--muted); font-weight:400; }
+.breakdownTotal { margin-top:7px; padding-top:12px; border-top:1px solid var(--border); color:var(--forest); font-size:17px; font-weight:900; }
 @media(max-width:900px) { .loginShell{grid-template-columns:1fr}.loginArt{display:none}.shell{grid-template-columns:1fr}.sidebar{position:static;height:auto}.navButton{width:auto}.content{padding:18px}.span4,.span6,.span8{grid-column:span 12}.topbar{padding:0 18px}.scoreFactsWide{grid-template-columns:1fr 1fr} }

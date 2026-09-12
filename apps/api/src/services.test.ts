@@ -24,11 +24,67 @@ function studentPrisma(sessionStatus: SessionStatus, attempts: Array<{ id:string
   } as any;
 }
 
+describe("active Session audience discovery", () => {
+  it("returns the ACTIVE Session when its frozen audience snapshot matches the Student school and class", async () => {
+    const findMany = vi.fn().mockResolvedValue([{
+      id: "session-1",
+      workshopId: "workshop-1",
+      startedAt: new Date("2026-09-11T22:40:59.441Z"),
+      workshop: { name: "Carbon Market Lab" }
+    }]);
+    const upsert = vi.fn().mockResolvedValue({ id: "participant-1" });
+    const prisma: any = {
+      studentProfile: { findUnique: vi.fn().mockResolvedValue({ userId: student.userId, schoolId: "school-1", classId: "class-a" }) },
+      workshopSession: { findMany },
+      workshopParticipant: { upsert }
+    };
+
+    await expect(new StudentService(prisma, {} as any).activeSessions(student)).resolves.toEqual([expect.objectContaining({
+      id: "session-1",
+      workshopId: "workshop-1",
+      workshopName: "Carbon Market Lab",
+      participantId: "participant-1"
+    })]);
+    expect(findMany).toHaveBeenCalledWith({
+      where: {
+        status: SessionStatus.ACTIVE,
+        audiences: { some: { schoolId: "school-1", OR: [{ classId: null }, { classId: "class-a" }] } }
+      },
+      include: { workshop: true },
+      orderBy: { startedAt: "desc" }
+    });
+    expect(upsert).toHaveBeenCalledWith(expect.objectContaining({
+      where: { sessionId_studentId: { sessionId: "session-1", studentId: student.userId } }
+    }));
+  });
+
+  it("returns an empty list without creating participation when no ACTIVE snapshot matches", async () => {
+    const upsert = vi.fn();
+    const prisma: any = {
+      studentProfile: { findUnique: vi.fn().mockResolvedValue({ userId: student.userId, schoolId: "school-1", classId: "class-a" }) },
+      workshopSession: { findMany: vi.fn().mockResolvedValue([]) },
+      workshopParticipant: { upsert }
+    };
+
+    await expect(new StudentService(prisma, {} as any).activeSessions(student)).resolves.toEqual([]);
+    expect(upsert).not.toHaveBeenCalled();
+  });
+});
+
 describe("Mission availability Option B", () => {
   it("makes M2 AVAILABLE only with teacher unlock and completed M1, without enabling Phase 2 gameplay", async () => {
     const service = new StudentService(studentPrisma(SessionStatus.ACTIVE, [{ id:"ma1", missionTemplateId:"m1", status:AttemptStatus.COMPLETED }]), {} as any);
     const missions = await service.missions(student, "session-1");
     expect(missions[1]).toMatchObject({ accessState:"AVAILABLE", progressState:"NOT_STARTED", reason:"GAMEPLAY_DEFERRED_PHASE_1", capabilities:{ canStartAttempt:false } });
+  });
+
+  it("makes Package A M2 playable only after both unlock and completed M1", async () => {
+    const prisma:any=studentPrisma(SessionStatus.ACTIVE, [{ id:"ma1", missionTemplateId:"m1", status:AttemptStatus.COMPLETED }]);
+    prisma.missionTemplate.findMany=vi.fn().mockResolvedValue([{ id:"m1",stableId:"M1",sequenceNo:1,displayConfig:{gameplayImplemented:true} },{ id:"m2",stableId:"M2",sequenceNo:2,displayConfig:{gameplayImplemented:true} },{ id:"m3",stableId:"M3",sequenceNo:3,displayConfig:{gameplayImplemented:true} },{ id:"m4",stableId:"M4",sequenceNo:4,displayConfig:{gameplayImplemented:false} }]);
+    const missions=await new StudentService(prisma,{} as any).missions(student,"session-1");
+    expect(missions[1]).toMatchObject({accessState:"AVAILABLE",capabilities:{canStartAttempt:true}});
+    expect(missions[2]).toMatchObject({accessState:"BLOCKED_SESSION_UNLOCK",capabilities:{canStartAttempt:false}});
+    expect(missions[3]).toMatchObject({accessState:"BLOCKED_SESSION_UNLOCK",capabilities:{canStartAttempt:false}});
   });
 
   it("keeps M2 prerequisite-blocked when M1 is not complete", async () => {
@@ -134,7 +190,8 @@ describe("student mutation invariants", () => {
   it("hydrates the persisted screen, viewed nodes, and Question history without exposing answer rules", async () => {
     const prisma:any={
       missionAttempt:{findFirst:vi.fn().mockResolvedValue({id:"ma1",missionTemplateId:"m1",status:AttemptStatus.IN_PROGRESS,runtimeState:{viewedNodes:["Dyeing"],hintUsed:true,revealUsed:false,reflection:null},attempt:{participant:{id:"p1",studentId:student.userId,session:{status:SessionStatus.ACTIVE}}},mission:{stableId:"M1",contentVersionId:"v1"},currentScreen:{id:"s2",stableId:"M1-S02"}})},
-      questionTemplate:{findMany:vi.fn().mockResolvedValue([{id:"q1",stableId:"M1-Q01",screenTemplateId:"s3",questionType:"SC",promptCn:"?",promptEn:"?",options:["Scope 1"],baseScore:5,answerRule:{mode:"EXACT",answer:"Scope 1"},results:[{status:"FINALIZED",systemScore:4.5,resolutionMode:"INDEPENDENT"}],attempts:[{questionAttemptNo:1},{questionAttemptNo:2}]}])},missionScoringConfig:{findUniqueOrThrow:vi.fn().mockResolvedValue({revealPolicy:{afterFailures:3}})}
+      missionScreenTemplate:{findMany:vi.fn().mockResolvedValue([{id:"s2",stableId:"M1-S02",sequenceNo:2,inputConfig:{},displayConfig:{}}])},
+      questionTemplate:{findMany:vi.fn().mockResolvedValue([{id:"q1",stableId:"M1-Q01",screenTemplateId:"s3",questionType:"SC",answerMode:"EXACT",isSimulation:false,promptCn:"?",promptEn:"?",options:["Scope 1"],baseScore:5,answerRule:{mode:"EXACT",answer:"Scope 1"},results:[{status:"FINALIZED",systemScore:4.5,resolutionMode:"INDEPENDENT"}],attempts:[{questionAttemptNo:1},{questionAttemptNo:2}]}])},missionScoringConfig:{findUniqueOrThrow:vi.fn().mockResolvedValue({revealPolicy:{afterFailures:3}})}
     };
     const result=await new StudentService(prisma,{} as any).attempt(student,"ma1");
     expect(result).toMatchObject({
@@ -146,6 +203,20 @@ describe("student mutation invariants", () => {
     });
     expect(result.questions[0]).not.toHaveProperty("answerRule");
     expect(JSON.stringify(result)).not.toContain('"answer":"Scope 1"');
+  });
+
+  it("returns the Student's own finalized strategy answer for readable resume rendering", async () => {
+    const persistedAnswer = { reduce: 8000, buy: 12000 };
+    const prisma:any={
+      missionAttempt:{findFirst:vi.fn().mockResolvedValue({id:"ma3",missionTemplateId:"m3",status:AttemptStatus.IN_PROGRESS,runtimeState:{},attempt:{participant:{id:"p1",studentId:student.userId,session:{status:SessionStatus.ACTIVE}}},mission:{stableId:"M3",contentVersionId:"v3"},currentScreen:{id:"s6",stableId:"M3-S06"}})},
+      missionScreenTemplate:{findMany:vi.fn().mockResolvedValue([{id:"s6",stableId:"M3-S06",sequenceNo:6,inputConfig:{},displayConfig:{}}])},
+      questionTemplate:{findMany:vi.fn().mockResolvedValue([{id:"q10",stableId:"M3-Q10",screenTemplateId:"s6",questionType:"DECISION",answerMode:"STRATEGY",isSimulation:true,promptCn:"Strategy",promptEn:"Strategy",options:[{label:"Reduce 8,000; Buy 12,000",value:persistedAnswer}],baseScore:10,results:[{status:"FINALIZED",systemScore:10,resolutionMode:"STRATEGY",selectedAttempt:{studentAnswer:persistedAnswer,evaluatedResult:{},resolutionMode:"STRATEGY"}}],attempts:[]}])},
+      missionScoringConfig:{findUniqueOrThrow:vi.fn().mockResolvedValue({revealPolicy:{afterFailures:3}})}
+    };
+
+    const result=await new StudentService(prisma,{} as any).attempt(student,"ma3");
+    expect(result.questions[0]).toMatchObject({stableId:"M3-Q10",finalized:true,resolutionMode:"STRATEGY",selectedAnswer:persistedAnswer});
+    expect(JSON.stringify(result)).not.toContain("answerRule");
   });
 
   it("keeps hidden answer rules out of Student history", async () => {
@@ -177,11 +248,35 @@ describe("student mutation invariants", () => {
     const update=vi.fn().mockResolvedValue({});const unlock=vi.fn();
     const prisma:any={
       missionAttempt:{findFirst:vi.fn().mockResolvedValue({id:"ma1",attemptId:"a1",missionTemplateId:"m1",status:AttemptStatus.IN_PROGRESS,runtimeState:{viewedNodes:["1","2","3","4"],reflection:"Evidence"},attempt:{participant:{id:"p1",studentId:student.userId,session:{status:SessionStatus.ACTIVE}}},mission:{stableId:"M1",contentVersionId:"v1"},currentScreen:null}),update},
-      questionTemplate:{count:vi.fn().mockResolvedValue(16)},questionResult:{count:vi.fn().mockResolvedValue(16)},missionScreenTemplate:{findFirstOrThrow:vi.fn().mockResolvedValue({inputConfig:{nodesRequired:4}})},missionScoringConfig:{findFirstOrThrow:vi.fn().mockResolvedValue({id:"cfg",checksum:"a".repeat(64),componentDefinitions:[]})},attempt:{update},workshopParticipant:{update},missionUnlock:{create:unlock},$transaction:vi.fn(async(values:any[])=>Promise.all(values))
+      questionTemplate:{count:vi.fn().mockResolvedValue(16)},questionResult:{count:vi.fn().mockResolvedValue(16)},missionScreenTemplate:{findFirstOrThrow:vi.fn().mockResolvedValue({inputConfig:{nodesRequired:4}})},missionScoringConfig:{findUniqueOrThrow:vi.fn().mockResolvedValue({id:"cfg",checksum:"a".repeat(64),componentDefinitions:[],retryPolicy:{},assistancePolicy:{},revealPolicy:{},completionPolicy:{}})},attempt:{update},workshopParticipant:{update},missionUnlock:{create:unlock},$transaction:vi.fn(async(values:any[])=>Promise.all(values))
     };
-    const result=await new StudentService(prisma,{calculateMissionOne:vi.fn().mockResolvedValue(5)} as any).complete(student,"ma1");
+    const result=await new StudentService(prisma,{calculateMission:vi.fn().mockResolvedValue(5)} as any).complete(student,"ma1");
     expect(result).toEqual({status:"COMPLETED",systemScore:5,nextMission:{state:"LOCKED",reason:"WAITING_FOR_TEACHER"}});
     expect(unlock).not.toHaveBeenCalled();
+  });
+
+  it("completes M2 from finalized activities without auto-unlocking M3", async () => {
+    const update=vi.fn().mockResolvedValue({}); const unlock=vi.fn();
+    const prisma:any={missionAttempt:{findFirst:vi.fn().mockResolvedValue({id:"ma2",attemptId:"a2",missionTemplateId:"m2",status:AttemptStatus.IN_PROGRESS,runtimeState:{},attempt:{participant:{id:"p1",studentId:student.userId,session:{status:SessionStatus.ACTIVE}}},mission:{stableId:"M2",contentVersionId:"v2"},currentScreen:{id:"m2s7"}}),update},questionTemplate:{count:vi.fn().mockResolvedValue(25)},questionResult:{count:vi.fn().mockResolvedValue(25)},missionScoringConfig:{findUniqueOrThrow:vi.fn().mockResolvedValue({id:"m2cfg",checksum:"b".repeat(64),componentDefinitions:[],retryPolicy:{},assistancePolicy:{},revealPolicy:{},completionPolicy:{minimumScore:null}})},attempt:{update},workshopParticipant:{update},missionUnlock:{create:unlock},$transaction:vi.fn(async(values:any[])=>Promise.all(values))};
+    const result=await new StudentService(prisma,{calculateMission:vi.fn().mockResolvedValue(100)} as any).complete(student,"ma2");
+    expect(result).toMatchObject({status:"COMPLETED",systemScore:100,nextMission:{state:"LOCKED",reason:"WAITING_FOR_TEACHER"}});
+    expect(unlock).not.toHaveBeenCalled();
+  });
+
+  it("finalizes the configured M3 strategy through one immutable explicit submission", async () => {
+    const create=vi.fn().mockResolvedValue({id:"qa-strategy"}); const upsert=vi.fn().mockResolvedValue({});
+    const tx:any={questionAttempt:{create},questionResult:{upsert},workshopParticipant:{update:vi.fn().mockResolvedValue({})}};
+    const prisma:any={missionAttempt:{findFirst:vi.fn().mockResolvedValue({id:"ma3",missionTemplateId:"m3",status:AttemptStatus.IN_PROGRESS,runtimeState:{},attempt:{participant:{id:"p1",studentId:student.userId,session:{status:SessionStatus.ACTIVE}}},mission:{stableId:"M3",contentVersionId:"v2"},currentScreen:{id:"m3s6"}})},questionAttempt:{findUnique:vi.fn().mockResolvedValue(null),count:vi.fn().mockResolvedValue(0)},questionTemplate:{findUnique:vi.fn().mockResolvedValue({id:"q10",stableId:"M3-Q10",missionTemplateId:"m3",contentVersionId:"v2",questionType:"DECISION",answerMode:"STRATEGY",baseScore:10,promptCn:"strategy",promptEn:"strategy",options:[],answerRule:{mode:"STRATEGY",rubricRef:"M3_LOWEST_COST_COMPLIANCE",rubric:{shortage:20000,availableReduction:8000,mac:40,allowancePrice:65}},feedbackConfig:{correct:"Correct",wrong:"Try again",explanation:"Use cheaper reduction first."}})},questionResult:{findUnique:vi.fn().mockResolvedValue(null)},missionScoringConfig:{findUniqueOrThrow:vi.fn().mockResolvedValue({id:"cfg3",checksum:"c".repeat(64),retryPolicy:{maxIndependentAttempts:3,strategyIndependentAttempts:1,factors:[1,.9,.8]},assistancePolicy:{type:"NONE"},revealPolicy:{afterFailures:3,factor:.5}})},$transaction:vi.fn(async(callback:any)=>callback(tx))};
+    const result=await new StudentService(prisma,{} as any).submit(student,"ma3","q10",{clientSubmissionId:"a05c4b12-1e83-4b9f-9c9e-9195e579fc68",answer:{reduce:8000,buy:12000},timeSpentMs:10});
+    expect(result).toMatchObject({correct:true,finalized:true,score:10,revealAvailable:false});
+    expect(create).toHaveBeenCalledOnce();
+    expect(upsert.mock.calls[0]![0].create).toMatchObject({resolutionMode:"STRATEGY",systemScore:10});
+  });
+
+  it("blocks screen Continue until every current-screen question is server-resolved", async () => {
+    const prisma:any={missionAttempt:{findFirst:vi.fn().mockResolvedValue({id:"ma2",missionTemplateId:"m2",currentScreenId:"s2",status:AttemptStatus.IN_PROGRESS,runtimeState:{},attempt:{participant:{id:"p1",studentId:student.userId,session:{status:SessionStatus.ACTIVE}}},mission:{stableId:"M2"},currentScreen:{id:"s2",stableId:"M2-S02",sequenceNo:2,inputConfig:{}}})},missionScreenTemplate:{findFirst:vi.fn().mockResolvedValue({id:"s3",stableId:"M2-S03",sequenceNo:3})},questionTemplate:{count:vi.fn().mockResolvedValue(5)},questionResult:{count:vi.fn().mockResolvedValue(4)},workshopParticipant:{update:vi.fn()},$transaction:vi.fn()};
+    await expect(new StudentService(prisma,{} as any).setScreen(student,"ma2","M2-S03")).rejects.toSatisfy((error:unknown)=>responseCode(error).error.code==="SCREEN_NOT_RESOLVED");
+    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 });
 
@@ -399,10 +494,10 @@ describe("teacher transactions and authorization", () => {
       }]
     }];
     const prisma:any={workshopTeacher:{findUnique:vi.fn().mockResolvedValue({role:WorkshopRole.OWNER})},workshopParticipant:{findMany:vi.fn().mockResolvedValue(rows)}};
-    const scoring:any={calculateMissionOne:vi.fn().mockResolvedValue(85.25)};
+    const scoring:any={calculateMission:vi.fn().mockResolvedValue(85.25)};
     const response=await new TeacherService(prisma,scoring).students(teacher,"w1");
     const mission=response[0]!.attempts[0]!.missionAttempts[0]!;
-    expect(scoring.calculateMissionOne).toHaveBeenCalledWith("ma1",true,false);
+    expect(scoring.calculateMission).toHaveBeenCalledWith("ma1",true,false);
     expect(mission).toMatchObject({questionAdjustedScore:85.25,effectiveScore:91,questionResults:[{effectiveScore:4.01,question:{stableId:"M1-Q02"}}]});
     expect(()=>JSON.stringify(response)).not.toThrow();
   });
@@ -423,7 +518,7 @@ describe("teacher transactions and authorization", () => {
     const create=vi.fn().mockResolvedValue(created);const update=vi.fn().mockResolvedValue({});
     const tx:any={scoreAdjustmentStream:{findFirst:vi.fn().mockResolvedValue({id:"stream-q",version:0n,currentAdjustmentId:null}),update},scoreAdjustment:{create},$queryRaw:vi.fn().mockResolvedValue([{id:"stream-q",currentAdjustmentId:null}])};
     const prisma:any={questionResult:{findUnique:vi.fn().mockResolvedValue({id:"qr1",status:"FINALIZED",systemScore:4,v5BaseScore:6,missionAttempt:{attempt:{participant:{session:{workshopId:"w1"}}}}}),findUniqueOrThrow:vi.fn().mockResolvedValue({missionAttemptId:"ma1"})},workshopTeacher:{findUnique:vi.fn().mockResolvedValue({role:WorkshopRole.OWNER})},$transaction:vi.fn(async(callback:any)=>callback(tx))};
-    const scoring:any={calculateMissionOne:vi.fn().mockResolvedValue(4.01)};
+    const scoring:any={calculateMission:vi.fn().mockResolvedValue(4.01)};
     const response=await new TeacherService(prisma,scoring).adjust(teacher,{targetLevel:"QUESTION",targetId:"qr1",adjustedScore:4.01,reason:"Evidence review",expectedSupersedesAdjustmentId:null});
     expect(response).toEqual({adjustment:created,effectiveMissionScore:4.01});
     expect(()=>JSON.stringify(response)).not.toThrow();
@@ -435,7 +530,7 @@ describe("teacher transactions and authorization", () => {
     const create=vi.fn().mockResolvedValue({id:"adj-q2",streamId:"stream-q2",supersedesAdjustmentId:null});
     const tx:any={scoreAdjustmentStream:{findFirst:vi.fn().mockResolvedValue({id:"stream-q2",currentAdjustmentId:null}),update:vi.fn().mockResolvedValue({})},scoreAdjustment:{create},$queryRaw:vi.fn().mockResolvedValue([{id:"stream-q2",currentAdjustmentId:null}])};
     const prisma:any={questionResult:{findUnique:vi.fn().mockResolvedValue({id:"qr2",status:"FINALIZED",systemScore:3,v5BaseScore:6,missionAttempt:{attempt:{participant:{session:{workshopId:"w1"}}}}}),findUniqueOrThrow:vi.fn().mockResolvedValue({missionAttemptId:"ma1"})},workshopTeacher:{findUnique:vi.fn().mockResolvedValue({role:WorkshopRole.INSTRUCTOR})},$transaction:vi.fn(async(callback:any)=>callback(tx))};
-    await new TeacherService(prisma,{calculateMissionOne:vi.fn().mockResolvedValue(80)} as any).adjust(teacher,{targetLevel:"QUESTION",targetId:"qr2",adjustedScore:3.5,reason:"Independent review",expectedSupersedesAdjustmentId:null});
+    await new TeacherService(prisma,{calculateMission:vi.fn().mockResolvedValue(80)} as any).adjust(teacher,{targetLevel:"QUESTION",targetId:"qr2",adjustedScore:3.5,reason:"Independent review",expectedSupersedesAdjustmentId:null});
     expect(create).toHaveBeenCalledWith({data:expect.objectContaining({streamId:"stream-q2",originalSystemScore:3,adjustedScore:3.5})});
   });
 

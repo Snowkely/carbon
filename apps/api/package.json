@@ -11,7 +11,12 @@
     "test": "vitest run",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:seed": "tsx prisma/seed.ts"
+    "prisma:seed": "tsx prisma/seed.ts",
+    "content:publish-package-a": "tsx prisma/publish-package-a.ts",
+    "content:publish-package-b1": "tsx prisma/publish-package-b1.ts",
+    "content:publish-package-b2": "tsx prisma/publish-package-b2.ts",
+    "content:publish-package-b2-hotfix": "tsx prisma/publish-package-b2-hotfix.ts",
+    "content:publish-package-c": "tsx prisma/publish-package-c.ts"
   },
   "dependencies": {
     "@carbon/content-schema": "workspace:*",

@@ -1,6 +1,7 @@
 import { PrismaClient, Prisma, AccountType, ContentStatus, FeedbackFormStatus, FeedbackQuestionType, QuestionType, AnswerMode, SourceType } from "@prisma/client";
 import argon2 from "argon2";
 import { createHash } from "node:crypto";
+import { publishPackageAContent } from "./package-a-content";
 
 const prisma = new PrismaClient();
 const sha = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -179,6 +180,7 @@ async function main() {
     });
   }
 
+  await publishPackageAContent(prisma);
   console.log("Seed complete. Accounts: teacher.demo, student.alex, student.ben / Carbon123!");
 }
 

@@ -167,7 +167,8 @@ export class TeacherService {
         const previous = index === 0 || missionAttempts.some((item) => item.missionTemplateId === missions[index - 1]!.id && item.status === "COMPLETED");
         return completed ? "COMPLETED" : active ? "IN_PROGRESS" : unlock && previous ? "AVAILABLE" : unlock ? "BLOCKED_PREREQUISITE" : "LOCKED";
       });
-      return { missionTemplateId: mission.id, stableId: mission.stableId, unlockState: unlock ? "UNLOCKED_FOR_SESSION" : "LOCKED_FOR_SESSION", unlockSource: unlock?.unlockSource, counts: { eligible: statuses.length, completed: statuses.filter((s) => s === "COMPLETED").length, availableOrInProgress: statuses.filter((s) => s === "AVAILABLE" || s === "IN_PROGRESS").length, blockedByPrerequisite: statuses.filter((s) => s === "BLOCKED_PREREQUISITE").length } };
+      const display = (mission.displayConfig ?? {}) as { phase?: string; gameplayImplemented?: boolean };
+      return { missionTemplateId: mission.id, stableId: mission.stableId, gameplayImplemented: display.gameplayImplemented ?? display.phase === "IMPLEMENTED", unlockState: unlock ? "UNLOCKED_FOR_SESSION" : "LOCKED_FOR_SESSION", unlockSource: unlock?.unlockSource, counts: { eligible: statuses.length, completed: statuses.filter((s) => s === "COMPLETED").length, availableOrInProgress: statuses.filter((s) => s === "AVAILABLE" || s === "IN_PROGRESS").length, blockedByPrerequisite: statuses.filter((s) => s === "BLOCKED_PREREQUISITE").length } };
     });
   }
 
@@ -178,9 +179,11 @@ export class TeacherService {
     const threshold = Number(process.env.PRESENCE_OFFLINE_SECONDS ?? 30) * 1000;
     const participants = await this.prisma.workshopParticipant.findMany({ where: { sessionId }, include: { student: true, attempts: { include: { missionAttempts: { include: { mission: true, currentScreen: true } } }, orderBy: { startedAt: "desc" } } } });
     return Promise.all(participants.map(async (participant) => {
-      const missionAttempt = participant.attempts.flatMap((attempt) => attempt.missionAttempts).find((item) => item.status === "IN_PROGRESS") ?? participant.attempts.flatMap((attempt) => attempt.missionAttempts)[0];
-      const effectiveScore = missionAttempt ? await this.scoring.calculateMissionOne(missionAttempt.id, true) : 0;
-      return { studentId: participant.studentId, name: participant.student.name, online: Boolean(participant.lastActivityAt && Date.now() - participant.lastActivityAt.getTime() <= threshold), currentMission: missionAttempt?.mission.stableId ?? null, currentScreen: missionAttempt?.currentScreen?.stableId ?? null, currentEffectiveScore: effectiveScore, lastActivity: participant.lastActivityAt };
+      const allMissionAttempts = participant.attempts.flatMap((attempt) => attempt.missionAttempts);
+      const missionAttempt = allMissionAttempts.find((item) => item.status === "IN_PROGRESS") ?? [...allMissionAttempts].sort((left, right) => right.mission.sequenceNo - left.mission.sequenceNo)[0];
+      const effectiveScore = missionAttempt ? await this.scoring.calculateMission(missionAttempt.id, true) : 0;
+      const finalResult = participant.attempts[0] ? await this.scoring.calculateFinalResult(participant.attempts[0].id).catch(() => null) : null;
+      return { studentId: participant.studentId, name: participant.student.name, online: Boolean(participant.lastActivityAt && Date.now() - participant.lastActivityAt.getTime() <= threshold), currentMission: missionAttempt?.mission.stableId ?? null, currentScreen: missionAttempt?.currentScreen?.stableId ?? null, currentEffectiveScore: effectiveScore, finalCarbonMarketIq: finalResult?.effectiveScore ?? null, lastActivity: participant.lastActivityAt };
     }));
   }
 
@@ -218,20 +221,24 @@ export class TeacherService {
       ...participant,
       attempts: await Promise.all(participant.attempts.map(async (attempt) => ({
         ...attempt,
-        effectiveScore: attempt.adjustmentStream?.currentAdjustment ? Number(attempt.adjustmentStream.currentAdjustment.adjustedScore) : attempt.systemTotalScore == null ? null : Number(attempt.systemTotalScore),
+        ...await (async () => {
+          const finalResult = attempt.missionAttempts.length >= 6 ? await this.scoring.calculateFinalResult(attempt.id).catch(() => null) : null;
+          return { calculatedFinalScore: finalResult?.calculatedScore ?? null, effectiveScore: finalResult?.effectiveScore ?? null };
+        })(),
         adjustmentStream: attempt.adjustmentStream ? scoreAdjustmentStreamResponse(attempt.adjustmentStream) : null,
         missionAttempts: await Promise.all(attempt.missionAttempts.map(async (missionAttempt) => {
           const systemScore = missionAttempt.systemScore == null ? null : Number(missionAttempt.systemScore);
           const questionAdjustedScore = systemScore === null
             ? null
-            : missionAttempt.mission.stableId === "M1"
-              ? await this.scoring.calculateMissionOne(missionAttempt.id, true, false)
-              : systemScore;
+            : await this.scoring.calculateMission(missionAttempt.id, true, false);
           const missionOverride = missionAttempt.adjustmentStream?.currentAdjustment
             ? Number(missionAttempt.adjustmentStream.currentAdjustment.adjustedScore)
             : null;
           return {
             ...missionAttempt,
+            scoreBreakdown: systemScore === null || typeof (this.scoring as { calculateMissionBreakdown?: unknown }).calculateMissionBreakdown !== "function" ? null : await this.scoring.calculateMissionBreakdown(missionAttempt.id, true),
+            rubricBreakdown: missionAttempt.mission?.stableId === "M5" ? (missionAttempt.scoringPolicySnapshot as { rubricBreakdown?: unknown } | null)?.rubricBreakdown ?? null : null,
+            roundBreakdown: missionAttempt.mission?.stableId === "M6" && systemScore !== null ? await this.scoring.calculateMissionSixBreakdown(missionAttempt.id, true) : null,
             questionAdjustedScore,
             effectiveScore: missionOverride ?? questionAdjustedScore,
             adjustmentStream: missionAttempt.adjustmentStream ? scoreAdjustmentStreamResponse(missionAttempt.adjustmentStream) : null,
@@ -271,7 +278,11 @@ export class TeacherService {
     } else {
       const target = await this.prisma.attempt.findUnique({ where: { id: input.targetId }, include: { participant: { include: { session: true } } } });
       if (!target || target.systemTotalScore === null) apiError(404, "FINAL_RESULT_NOT_FOUND", "Final scored Attempt not found");
-      workshopId = target.participant.session.workshopId; systemScore = Number(target.systemTotalScore);
+      workshopId = target.participant.session.workshopId;
+      const finalResult = typeof (this.scoring as ScoringService & { calculateFinalResult?: ScoringService["calculateFinalResult"] }).calculateFinalResult === "function"
+        ? await this.scoring.calculateFinalResult(target.id, false)
+        : null;
+      systemScore = finalResult?.calculatedScore ?? Number(target.systemTotalScore);
     }
     await this.membership(user, workshopId, MUTATORS);
     if (input.adjustedScore < 0 || input.adjustedScore > maximum) apiError(400, "SCORE_OUT_OF_BOUNDS", `Adjusted score must be between 0 and ${maximum}`);
@@ -301,7 +312,7 @@ export class TeacherService {
     let effectiveMissionScore: number | undefined;
     if (input.targetLevel === ScoreTargetLevel.QUESTION) {
       const result = await this.prisma.questionResult.findUniqueOrThrow({ where: { id: input.targetId } });
-      effectiveMissionScore = await this.scoring.calculateMissionOne(result.missionAttemptId, true);
+      effectiveMissionScore = await this.scoring.calculateMission(result.missionAttemptId, true);
     }
     return { adjustment, effectiveMissionScore };
   }
@@ -311,7 +322,7 @@ export class TeacherService {
     const rows = await this.prisma.workshopParticipant.findMany({ where: { session: { workshopId } }, include: { student: true, attempts: { include: { missionAttempts: { include: { mission: true } } } } } });
     const lines = ["Name,Student ID,Mission,System Score,Effective Score,Status"];
     for (const participant of rows) for (const attempt of participant.attempts) for (const mission of attempt.missionAttempts) {
-      const effectiveScore = mission.mission.stableId === "M1" ? await this.scoring.calculateMissionOne(mission.id, true) : "";
+      const effectiveScore = await this.scoring.calculateMission(mission.id, true);
       lines.push([participant.student.name, participant.student.studentId, mission.mission.stableId, mission.systemScore?.toString() ?? "", effectiveScore, mission.status].map((value) => `"${String(value).replaceAll('"', '""')}"`).join(","));
     }
     const data = Buffer.from(lines.join("\r\n"), "utf8");
@@ -328,7 +339,7 @@ export class TeacherService {
 
   async questionBank(user: AuthUser) {
     this.ensureTeacher(user);
-    return this.prisma.gameContentVersion.findMany({ where: { status: "PUBLISHED" }, include: { missions: { include: { questions: { select: { id: true, stableId: true, questionType: true, answerMode: true, promptCn: true, promptEn: true, baseScore: true } } } } } });
+    return this.prisma.gameContentVersion.findMany({ where: { status: "PUBLISHED" }, orderBy: { publishedAt: "desc" }, include: { missions: { include: { questions: { select: { id: true, stableId: true, questionType: true, answerMode: true, promptCn: true, promptEn: true, baseScore: true } } } } } });
   }
 }
 

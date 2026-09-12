@@ -14,8 +14,8 @@ describe("Teacher Mission Control presentation", () => {
     expect(teacherMissionPresentation({ missionTemplateId: "m1", stableId: "M1", unlockState: "UNLOCKED_FOR_SESSION" }, "ACTIVE")).toMatchObject({ gameplayDeferred: false, gameplayStatusLabel: null });
   });
 
-  it.each(["M2", "M3", "M4", "M5", "M6"])("labels unimplemented %s gameplay as Coming soon", (stableId) => {
-    expect(teacherMissionPresentation({ missionTemplateId: stableId.toLowerCase(), stableId, unlockState: "UNLOCKED_FOR_SESSION" }, "ACTIVE")).toMatchObject({
+  it.each(["M6"])("allows an explicit historical content flag to label %s as Coming soon", (stableId) => {
+    expect(teacherMissionPresentation({ missionTemplateId: stableId.toLowerCase(), stableId, unlockState: "UNLOCKED_FOR_SESSION", gameplayImplemented: false }, "ACTIVE")).toMatchObject({
       unlockStatusLabel: "Unlocked",
       canUnlock: false,
       gameplayDeferred: true,
@@ -23,20 +23,24 @@ describe("Teacher Mission Control presentation", () => {
     });
   });
 
-  it("shows friendly Unlocked and Coming soon labels after M3 is unlocked", () => {
+  it.each(["M1", "M2", "M3", "M4", "M5"])("does not label implemented %s as Coming soon", (stableId) => {
+    expect(teacherMissionPresentation({ missionTemplateId: stableId.toLowerCase(), stableId, unlockState: "UNLOCKED_FOR_SESSION", gameplayImplemented: true }, "ACTIVE")).toMatchObject({ gameplayDeferred: false, gameplayStatusLabel: null });
+  });
+
+  it("shows friendly Unlocked without Coming soon after M3 is unlocked", () => {
     expect(teacherMissionPresentation({ missionTemplateId: "m3", stableId: "M3", unlockState: "UNLOCKED_FOR_SESSION" }, "ACTIVE")).toEqual({
       unlockStatusLabel: "Unlocked",
       unlockStatusTone: "unlocked",
       canUnlock: false,
       unlockLabel: null,
-      gameplayDeferred: true,
-      gameplayStatusLabel: "Coming soon"
+      gameplayDeferred: false,
+      gameplayStatusLabel: null
     });
   });
 
   it("maps raw locked state to a friendly Locked label without exposing the enum", () => {
     const presentation = teacherMissionPresentation({ missionTemplateId: "m2", stableId: "M2", unlockState: "LOCKED_FOR_SESSION" }, "ACTIVE");
-    expect(presentation).toMatchObject({ unlockStatusLabel: "Locked", unlockStatusTone: "locked", gameplayStatusLabel: "Coming soon" });
+    expect(presentation).toMatchObject({ unlockStatusLabel: "Locked", unlockStatusTone: "locked", gameplayStatusLabel: null });
     expect(JSON.stringify(presentation)).not.toContain("LOCKED_FOR_SESSION");
   });
 

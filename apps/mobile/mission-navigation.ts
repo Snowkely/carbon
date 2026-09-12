@@ -29,3 +29,12 @@ export function backToHomeFromMission(missionAttemptId: string): MissionNavigati
 export function resumeMission(missionAttemptId: string): MissionNavigationTarget {
   return { screen: "mission", missionAttemptId };
 }
+
+export function missionNavigationKey(missionAttemptId: string, screenStableId?: string | null, questionStableId?: string | null): string | null {
+  return screenStableId ? [missionAttemptId, screenStableId, questionStableId ?? ""].join(":") : null;
+}
+
+export function updateMissionScrollPosition(previousKey: string | null, nextKey: string | null, scrollToTop: () => void): string | null {
+  if (previousKey && nextKey && previousKey !== nextKey) scrollToTop();
+  return nextKey ?? previousKey;
+}

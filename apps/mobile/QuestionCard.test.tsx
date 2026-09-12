@@ -5,10 +5,11 @@ vi.mock("react-native", () => ({
   Pressable: "Pressable",
   StyleSheet: { create: <T,>(styles: T) => styles },
   Text: "Text",
+  TextInput: "TextInput",
   View: "View"
 }));
 
-import { QuestionCard, type MobileQuestion } from "./QuestionCard";
+import { QuestionCard, strategyAnswerLabel, type MobileQuestion } from "./QuestionCard";
 
 type TestElement = { type: unknown; props: Record<string, any> & { children?: ReactNode } };
 function descendants(node: ReactNode): TestElement[] {
@@ -89,5 +90,155 @@ describe("QuestionCard explicit submission", () => {
     expect(textContent(tree)).toContain("SELECT CARD → SELECT SCOPE");
     expect(descendants(tree).filter((node) => node.props.accessibilityRole === "radio")).toHaveLength(3);
     expect(textContent(tree)).toContain("Submit Answer");
+  });
+
+  it("renders a numeric entry that only updates draft state", () => {
+    const onSelect = vi.fn(); const onSubmit = vi.fn();
+    const tree = render({ question: { ...question, stableId: "M2-Q11", type: "NUM", options: null }, onSelect, onSubmit });
+    const input = descendants(tree).find((node) => node.props.accessibilityLabel === "Numeric answer for M2-Q11");
+    input?.props.onChangeText("250");
+    expect(onSelect).toHaveBeenCalledWith("250");
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("exposes multi-select choices as accessible checkboxes", () => {
+    const tree = render({ question: { ...question, stableId: "M2-MC", type: "MC", options: ["A", "B"] }, draftAnswer: ["A"] });
+    expect(descendants(tree).filter((node) => node.props.accessibilityRole === "checkbox")).toHaveLength(2);
+    expect(descendants(tree).find((node) => node.props.accessibilityLabel === "A")?.props.accessibilityState.selected).toBe(true);
+  });
+
+  it("reorders the seven-step process draft without submitting and exposes Move controls", () => {
+    const onSelect = vi.fn(); const onSubmit = vi.fn();
+    const process = ["Emit", "Set Cap", "Allocate / Auction", "MRV", "Trade", "Surrender", "Compliance / Penalty"];
+    const tree = render({ question: { ...question, stableId: "M4-Q01", type: "ORDER", options: process, baseScore: 21 }, draftAnswer: process, onSelect, onSubmit });
+    descendants(tree).find((node) => node.props.accessibilityLabel === "Move Set Cap up")?.props.onPress();
+    expect(onSelect).toHaveBeenCalledWith(["Set Cap", "Emit", "Allocate / Auction", "MRV", "Trade", "Surrender", "Compliance / Penalty"]);
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(descendants(tree).find((node) => node.props.accessibilityLabel === "Submit Order for M4-Q01")?.props.disabled).toBe(false);
+  });
+
+  it("uses an explicit Submit Trade action and locks the second trade until the first resolves", () => {
+    const trade = { seller: "PowerCo", buyer: "SteelCo", quantity: 10000 };
+    const tree = render({ question: { ...question, stableId: "M4-Q06", type: "DECISION", options: [{ label: "PowerCo to SteelCo", value: trade }] }, draftAnswer: trade, disabled: true });
+    expect(descendants(tree).find((node) => node.props.accessibilityLabel === "Submit Trade for M4-Q06")?.props.disabled).toBe(true);
+    expect(textContent(tree)).toContain("Complete the preceding trade first.");
+  });
+
+  it("keeps Mission 5 action and quantity changes as drafts until review and explicit Submit Decision", () => {
+    const onSelect = vi.fn(); const onReview = vi.fn(); const onSubmit = vi.fn();
+    const m5 = { ...question, stableId: "M5-Q03", type: "DECISION", answerMode: "STRATEGY", options: ["Reduce", "Buy", "Sell", "Hold"], baseScore: 20 };
+    const draftTree = render({ question: m5, draftAnswer: { action: "Reduce", quantity: "10000" }, onSelect, onReview, onSubmit });
+    descendants(draftTree).find((node) => node.props.accessibilityLabel === "Buy")?.props.onPress();
+    descendants(draftTree).find((node) => node.props.accessibilityLabel === "Decision quantity")?.props.onChangeText("9000");
+    expect(onSelect).toHaveBeenCalledTimes(2);
+    expect(onReview).not.toHaveBeenCalled();
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(descendants(draftTree).find((node) => node.props.accessibilityLabel === "Submit Decision for M5-Q03")?.props.disabled).toBe(true);
+  });
+
+  it("shows only the chosen projected state and enables explicit submission after Review", () => {
+    const onReview = vi.fn(); const onSubmit = vi.fn();
+    const m5 = { ...question, stableId: "M5-Q03", type: "DECISION", answerMode: "STRATEGY", options: ["Reduce", "Buy", "Sell", "Hold"], baseScore: 20 };
+    const tree = render({ question: m5, draftAnswer: { action: "Reduce", quantity: "10000" }, strategyPreview: { finalAllowances: 100000, finalEmissions: 100000, complianceGap: 0, status: "Compliant", projectedCost: 404000 }, onReview, onSubmit });
+    descendants(tree).find((node) => node.props.accessibilityLabel === "Review projected state")?.props.onPress();
+    expect(onReview).toHaveBeenCalledOnce();
+    expect(textContent(tree)).toContain("Projected state");
+    expect(textContent(tree)).toContain("Selected strategy: Reduce 10,000");
+    expect(textContent(tree)).not.toContain("[object Object]");
+    expect(textContent(tree)).not.toMatch(/best|correct strategy/i);
+    const submit = descendants(tree).find((node) => node.props.accessibilityLabel === "Submit Decision for M5-Q03");
+    expect(submit?.props.disabled).toBe(false);
+    submit?.props.onPress();
+    expect(onSubmit).toHaveBeenCalledOnce();
+  });
+
+  it("keeps an M6 strategy as an unscored draft until Review and explicit Submit Decision", () => {
+    const onSelect = vi.fn(); const onReview = vi.fn(); const onSubmit = vi.fn();
+    const m6 = { ...question, stableId: "M6-Q23", type: "DECISION", answerMode: "STRATEGY", options: ["Reduce / Invest", "Buy", "Sell", "Hold"], baseScore: 20 };
+    const draft = render({ question: m6, draftAnswer: "Reduce / Invest", onSelect, onReview, onSubmit });
+    expect(descendants(draft).find((node) => node.props.accessibilityLabel === "Submit Decision for M6-Q23")?.props.disabled).toBe(true);
+    descendants(draft).find((node) => node.props.accessibilityLabel === "Review strategy for M6-Q23")?.props.onPress();
+    expect(onReview).toHaveBeenCalledOnce();
+    expect(onSubmit).not.toHaveBeenCalled();
+    const reviewed = render({ question: m6, draftAnswer: "Reduce / Invest", strategyPreview: { selection: "Reduce / Invest" }, onSubmit });
+    const submit = descendants(reviewed).find((node) => node.props.accessibilityLabel === "Submit Decision for M6-Q23");
+    expect(textContent(reviewed)).toContain("Selected strategy: Reduce / Invest");
+    expect(textContent(reviewed)).not.toContain("[object Object]");
+    expect(textContent(reviewed)).not.toMatch(/preferred|correct strategy/i);
+    expect(submit?.props.disabled).toBe(false);
+    submit?.props.onPress();
+    expect(onSubmit).toHaveBeenCalledOnce();
+  });
+
+  it("maps the M3 object-valued strategy back to its configured label for selection and Review", () => {
+    const onReview = vi.fn(); const createQuestionAttempt = vi.fn();
+    const selected = { reduce: 8000, buy: 12000 };
+    const m3 = { ...question, stableId: "M3-Q10", type: "DECISION", answerMode: "STRATEGY", options: [
+      { label: "Reduce 8,000; Buy 12,000", value: selected },
+      { label: "Reduce 0; Buy 20,000", value: { reduce: 0, buy: 20000 } }
+    ], baseScore: 10 };
+    const tree = render({ question: m3, draftAnswer: selected, strategyPreview: { selection: selected }, onReview, onSubmit: createQuestionAttempt });
+
+    const selectedOption = descendants(tree).find((node) => node.props.accessibilityLabel === "Reduce 8,000; Buy 12,000");
+    expect(selectedOption?.props.accessibilityState.selected).toBe(true);
+    expect(textContent(selectedOption as unknown as ReactNode)).toContain("Selected: Reduce 8,000; Buy 12,000");
+    expect(textContent(tree)).toContain("Selected strategy: Reduce 8,000; Buy 12,000");
+    expect(textContent(tree)).not.toContain("[object Object]");
+
+    descendants(tree).find((node) => node.props.accessibilityLabel === "Review strategy for M3-Q10")?.props.onPress();
+    expect(onReview).toHaveBeenCalledOnce();
+    expect(createQuestionAttempt).not.toHaveBeenCalled();
+    descendants(tree).find((node) => node.props.accessibilityLabel === "Submit Decision for M3-Q10")?.props.onPress();
+    expect(createQuestionAttempt).toHaveBeenCalledOnce();
+  });
+
+  it("invalidates the reviewed strategy when selection changes and renders the newly reviewed label", () => {
+    const onSelect = vi.fn(); const onSubmit = vi.fn();
+    const first = { reduce: 8000, buy: 12000 };
+    const second = { reduce: 0, buy: 20000 };
+    const options = [{ label: "Reduce 8,000; Buy 12,000", value: first }, { label: "Reduce 0; Buy 20,000", value: second }];
+    const m3 = { ...question, stableId: "M3-Q10", type: "DECISION", answerMode: "STRATEGY", options };
+    const oldReview = render({ question: m3, draftAnswer: first, strategyPreview: { selection: first }, onSelect, onSubmit });
+    descendants(oldReview).find((node) => node.props.accessibilityLabel === "Reduce 0; Buy 20,000")?.props.onPress();
+    expect(onSelect).toHaveBeenCalledWith(second);
+    expect(onSubmit).not.toHaveBeenCalled();
+
+    const changedDraft = render({ question: m3, draftAnswer: second, strategyPreview: undefined, onSubmit });
+    expect(descendants(changedDraft).find((node) => node.props.accessibilityLabel === "Submit Decision for M3-Q10")?.props.disabled).toBe(true);
+    const newReview = render({ question: m3, draftAnswer: second, strategyPreview: { selection: second }, onSubmit });
+    expect(textContent(newReview)).toContain("Selected strategy: Reduce 0; Buy 20,000");
+    expect(textContent(newReview)).not.toContain("Reduce 8,000; Buy 12,000This review");
+  });
+
+  it("renders a structurally restored strategy value and finalized persisted answer by configured label", () => {
+    const options = [{ label: "Reduce 8,000; Buy 12,000", value: { reduce: 8000, buy: 12000 } }];
+    const restored = JSON.parse('{"buy":12000,"reduce":8000}');
+    expect(strategyAnswerLabel(options, restored)).toBe("Reduce 8,000; Buy 12,000");
+
+    const tree = render({ question: { ...question, stableId: "M3-Q10", type: "DECISION", answerMode: "STRATEGY", options, finalized: true, resolutionMode: "STRATEGY", selectedAnswer: restored, score: 10 } });
+    expect(textContent(tree)).toContain("Selected strategy: Reduce 8,000; Buy 12,000");
+    expect(textContent(tree)).not.toContain("[object Object]");
+  });
+
+  it("supports immutable free-text reasoning through explicit submission", () => {
+    const onSelect = vi.fn(); const onSubmit = vi.fn();
+    const reflection = { ...question, stableId: "M5-Q04", type: "REFLECTION", answerMode: "STRATEGY", options: null, baseScore: 10 };
+    const tree = render({ question: reflection, draftAnswer: "MAC is below price.", onSelect, onSubmit });
+    descendants(tree).find((node) => node.props.accessibilityLabel === "Reasoning for M5-Q04")?.props.onChangeText("New reasoning");
+    expect(onSelect).toHaveBeenCalledWith("New reasoning");
+    expect(onSubmit).not.toHaveBeenCalled();
+    descendants(tree).find((node) => node.props.accessibilityLabel === "Submit Reasoning for M5-Q04")?.props.onPress();
+    expect(onSubmit).toHaveBeenCalledOnce();
+  });
+
+  it("renders finalized rubric reasoning semantically without leaking a raw enum-like value", () => {
+    const tree = render({ question: { ...question, stableId: "M5-Q04", type: "REFLECTION", answerMode: "STRATEGY", options: null, baseScore: 10, finalized: true, resolutionMode: "STRATEGY", selectedAnswer: "1", score: 0 } });
+    const output = textContent(tree);
+    expect(output).toContain("Reasoning evaluated");
+    expect(output).toContain("Reasoning submitted");
+    expect(output).toContain("0.00 / 10.00 pts");
+    expect(output).not.toContain("Selected strategy: 1");
+    expect(output).not.toContain("Correct");
+    expect(output).not.toContain("[object Object]");
   });
 });

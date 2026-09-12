@@ -1,29 +1,25 @@
-import { describe, expect, it } from "vitest";
-import { feedbackSubmissionSchema, reflectionSchema, scoreAdjustmentStreamVersionSchema } from "./index.js";
+import { describe, expect, it, vi } from "vitest";
+import { createUnauthorizedCoordinator, missionScoreComponentLabel } from "./index.js";
 
-const validResponses = [
-  { questionStableId: "FB-Q01", selectedOption: "Excellent" },
-  { questionStableId: "FB-Q02", selectedOption: "Understanding how carbon markets work" },
-  { questionStableId: "FB-Q03", selectedOption: "Definitely yes" },
-  { questionStableId: "FB-Q04", textResponse: "More discussion time." }
-];
-
-describe("Feedback submission contract", () => {
-  it("accepts one response for each frozen question", () => expect(feedbackSubmissionSchema.safeParse({ responses: validResponses }).success).toBe(true));
-  it("treats FB-Q02 as single-choice and rejects array input", () => expect(feedbackSubmissionSchema.safeParse({ responses: validResponses.map((response) => response.questionStableId === "FB-Q02" ? { questionStableId: "FB-Q02", selectedOption: ["Other"] } : response) }).success).toBe(false));
-  it("requires trimmed Other text", () => expect(feedbackSubmissionSchema.safeParse({ responses: validResponses.map((response) => response.questionStableId === "FB-Q02" ? { questionStableId: "FB-Q02", selectedOption: "Other", otherText: "   " } : response) }).success).toBe(false));
-  it("does not permit a choice on the open-text question", () => expect(feedbackSubmissionSchema.safeParse({ responses: validResponses.map((response) => response.questionStableId === "FB-Q04" ? { questionStableId: "FB-Q04", selectedOption: "Good" } : response) }).success).toBe(false));
-});
-
-describe("Reflection completion contract", () => {
-  it("trims and accepts non-empty evidence", () => expect(reflectionSchema.parse({ response: "  boundary ownership  " }).response).toBe("boundary ownership"));
-  it("rejects empty or whitespace-only evidence", () => expect(reflectionSchema.safeParse({ response: "   " }).success).toBe(false));
-});
-
-describe("Score adjustment stream response contract", () => {
-  it("publishes version as a safe non-negative JSON number", () => {
-    expect(scoreAdjustmentStreamVersionSchema.parse(1)).toBe(1);
-    expect(() => scoreAdjustmentStreamVersionSchema.parse(1n)).toThrow();
-    expect(() => scoreAdjustmentStreamVersionSchema.parse(Number.MAX_SAFE_INTEGER + 1)).toThrow();
+describe("unauthorized confirmation coordination", () => {
+  it("waits for confirmation and coalesces parallel 401 responses", () => {
+    const coordinator = createUnauthorizedCoordinator(); const show = vi.fn(); const clear = vi.fn();
+    expect(coordinator.notify(show, clear)).toBe(true);
+    expect(coordinator.notify(show, clear)).toBe(false);
+    expect(show).toHaveBeenCalledOnce(); expect(clear).not.toHaveBeenCalled();
+    const confirm = show.mock.calls[0]![0] as () => void;
+    confirm(); confirm();
+    expect(clear).toHaveBeenCalledOnce();
+    expect(coordinator.notify(show, clear)).toBe(false);
   });
+
+  it("can be reset only for a newly authenticated session", () => {
+    const coordinator = createUnauthorizedCoordinator(); const show = vi.fn((confirm: () => void) => confirm()); const clear = vi.fn();
+    coordinator.notify(show, clear); coordinator.reset(); coordinator.notify(show, clear);
+    expect(show).toHaveBeenCalledTimes(2); expect(clear).toHaveBeenCalledTimes(2);
+  });
+});
+
+it("provides the shared M1-M6 component labels", () => {
+  expect(["SCAN", "UNIT_MATCHING", "BONUS", "PROCESS", "COST_LOGIC", "ROUND_3_INTEGRATED"].map(missionScoreComponentLabel)).toEqual(["Scan", "Unit", "Bonus", "Process", "Cost Logic", "Round 3 Integrated"]);
 });

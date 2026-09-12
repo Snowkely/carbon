@@ -2,15 +2,16 @@ export type TeacherMissionControlItem = {
   missionTemplateId: string;
   stableId: string;
   unlockState: string;
+  gameplayImplemented?: boolean;
 };
 
-const PHASE_ONE_GAMEPLAY_IMPLEMENTED: Readonly<Record<string, boolean>> = {
+const PACKAGE_C_GAMEPLAY_IMPLEMENTED: Readonly<Record<string, boolean>> = {
   M1: true,
-  M2: false,
-  M3: false,
-  M4: false,
-  M5: false,
-  M6: false
+  M2: true,
+  M3: true,
+  M4: true,
+  M5: true,
+  M6: true
 };
 
 export function initializeTeacherRuntime(): { token: null } {
@@ -21,7 +22,7 @@ export function teacherMissionPresentation(mission: TeacherMissionControlItem, s
   const teacherUnlockable = /^M[2-6]$/.test(mission.stableId);
   const canUnlock = teacherUnlockable && mission.unlockState === "LOCKED_FOR_SESSION" && sessionStatus === "ACTIVE";
   const isUnlocked = mission.unlockState === "UNLOCKED_FOR_SESSION";
-  const gameplayDeferred = PHASE_ONE_GAMEPLAY_IMPLEMENTED[mission.stableId] === false;
+  const gameplayDeferred = !(mission.gameplayImplemented ?? PACKAGE_C_GAMEPLAY_IMPLEMENTED[mission.stableId] ?? false);
   return {
     unlockStatusLabel: isUnlocked ? "Unlocked" : "Locked",
     unlockStatusTone: isUnlocked ? "unlocked" : "locked",

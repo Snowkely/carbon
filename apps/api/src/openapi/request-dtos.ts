@@ -5,7 +5,7 @@ export class RegisterDto {
   @ApiProperty({ type: String, example: "student.demo", minLength: 3, maxLength: 80 })
   username!: string;
 
-  @ApiProperty({ type: String, example: "Carbon123!", minLength: 8, maxLength: 128, writeOnly: true })
+  @ApiProperty({ type: String, example: "example-password", minLength: 8, maxLength: 128, writeOnly: true })
   password!: string;
 
   @ApiProperty({ type: String, enum: AccountType, example: AccountType.STUDENT })
@@ -16,7 +16,7 @@ export class LoginDto {
   @ApiProperty({ type: String, example: "teacher.demo", minLength: 3, maxLength: 80 })
   username!: string;
 
-  @ApiProperty({ type: String, example: "Carbon123!", minLength: 8, maxLength: 128, writeOnly: true })
+  @ApiProperty({ type: String, example: "example-password", minLength: 8, maxLength: 128, writeOnly: true })
   password!: string;
 }
 

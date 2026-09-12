@@ -7,8 +7,9 @@ import ScoreWorkspace from "./score-workspace";
 import { GradebookSelection, navigateToGradebook } from "./score-state";
 import { fetchTeacherDashboard, initializeTeacherRuntime, teacherMissionPresentation, teacherMissionUnlockMessage, unlockTeacherMission } from "./teacher-state";
 import { isHandledTeacherUnauthorized, teacherApiRequest } from "./teacher-api";
+import { resolveTeacherApiUrl } from "./public-config";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001/v1";
+const API = resolveTeacherApiUrl(process.env.NEXT_PUBLIC_API_URL);
 const INITIAL_TEACHER_RUNTIME = initializeTeacherRuntime();
 type View = "Dashboard" | "Workshops" | "Session Control" | "Mission Control" | "Live Monitor" | "Students" | "Gradebook" | "Feedback" | "Question Bank";
 type Session = { id:string; sessionNo:number; status:string; startedAt?:string|null };
@@ -22,7 +23,7 @@ export default function TeacherConsole() {
 }
 
 function Login({onLogin}:{onLogin:(token:string)=>void}) {
-  const [username,setUsername]=useState("teacher.demo"); const [password,setPassword]=useState("Carbon123!"); const [message,setMessage]=useState(""); const [busy,setBusy]=useState(false);
+  const [username,setUsername]=useState(""); const [password,setPassword]=useState(""); const [message,setMessage]=useState(""); const [busy,setBusy]=useState(false);
   const submit=async(event:React.FormEvent)=>{event.preventDefault();setBusy(true);setMessage("");try{const response=await fetch(`${API}/auth/login`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username,password})});const data=await response.json() as ApiError&{accessToken?:string;accountType?:string};if(!response.ok)throw new Error(data.error?.message??"Login failed");if(data.accountType!=="TEACHER")throw new Error("A teacher account is required");onLogin(data.accessToken!);}catch(error){setMessage(String(error));}finally{setBusy(false)}};
   return <main className="loginShell"><section className="loginArt"><p className="eyebrow">Carbon Market Explorer</p><h1>Teach the market. Track every decision.</h1><p>Run a live Carbon Trader workshop, review evidence, and unlock the learning journey at the right moment.</p></section><section className="loginPanel"><form className="loginCard stack" onSubmit={submit}><div><p className="eyebrow">CARBON TRADER I</p><h2>Teacher Console</h2><p className="muted">Sign in to manage your workshop.</p></div><label>Username<input value={username} onChange={(event)=>setUsername(event.target.value)} autoComplete="username" /></label><label>Password<input type="password" value={password} onChange={(event)=>setPassword(event.target.value)} autoComplete="current-password" /></label>{message&&<div className="error">{message}</div>}<button className="button" disabled={busy}>{busy?"Signing in…":"Sign in"}</button></form></section></main>;
 }

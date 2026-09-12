@@ -9,6 +9,7 @@ import { PrismaService } from "../common/prisma.service";
 import { apiError } from "../common/api-error";
 import { AuthUser, CurrentUser, JwtAuthGuard } from "../common/auth";
 import { LoginDto, LogoutDto, RefreshTokenDto, RegisterDto, StudentProfileDto } from "../openapi/request-dtos";
+import { validateRuntimeConfig } from "../common/runtime-config";
 
 const refreshHash = (token: string) => createHash("sha256").update(token).digest("hex");
 
@@ -17,9 +18,10 @@ export class AuthService {
   constructor(private readonly prisma: PrismaService, private readonly jwt: JwtService) {}
 
   private tokens(user: { id: string; username: string; accountType: AccountType }) {
+    const config = validateRuntimeConfig();
     const payload = { sub: user.id, username: user.username, accountType: user.accountType };
     const accessToken = this.jwt.sign(payload);
-    const refreshToken = this.jwt.sign({ ...payload, jti: randomUUID(), kind: "refresh" }, { secret: process.env.JWT_REFRESH_SECRET ?? "local-development-refresh-secret-change-me", expiresIn: `${Number(process.env.REFRESH_TOKEN_TTL_DAYS ?? 7)}d` });
+    const refreshToken = this.jwt.sign({ ...payload, jti: randomUUID(), kind: "refresh" }, { secret: config.jwtRefreshSecret, expiresIn: `${config.refreshTokenTtlDays}d`, algorithm: "HS256" });
     return { accessToken, refreshToken };
   }
 
@@ -31,7 +33,7 @@ export class AuthService {
     const passwordHash = await argon2.hash(parsed.data.password, { type: argon2.argon2id });
     const user = await this.prisma.userAccount.create({ data: { username: parsed.data.username, passwordHash, accountType: parsed.data.accountType } });
     const tokens = this.tokens(user);
-    await this.prisma.authSession.create({ data: { userId: user.id, refreshTokenHash: refreshHash(tokens.refreshToken), expiresAt: new Date(Date.now() + Number(process.env.REFRESH_TOKEN_TTL_DAYS ?? 7) * 86_400_000) } });
+    await this.prisma.authSession.create({ data: { userId: user.id, refreshTokenHash: refreshHash(tokens.refreshToken), expiresAt: new Date(Date.now() + validateRuntimeConfig().refreshTokenTtlDays * 86_400_000) } });
     return { ...tokens, accountType: user.accountType, profileRequired: true };
   }
 
@@ -42,7 +44,7 @@ export class AuthService {
     if (!user || user.status !== AccountStatus.ACTIVE || !(await argon2.verify(user.passwordHash, parsed.data.password))) apiError(401, "INVALID_CREDENTIALS", "Invalid username or password");
     const tokens = this.tokens(user);
     await this.prisma.$transaction([
-      this.prisma.authSession.create({ data: { userId: user.id, refreshTokenHash: refreshHash(tokens.refreshToken), expiresAt: new Date(Date.now() + Number(process.env.REFRESH_TOKEN_TTL_DAYS ?? 7) * 86_400_000) } }),
+      this.prisma.authSession.create({ data: { userId: user.id, refreshTokenHash: refreshHash(tokens.refreshToken), expiresAt: new Date(Date.now() + validateRuntimeConfig().refreshTokenTtlDays * 86_400_000) } }),
       this.prisma.loginRecord.create({ data: { userId: user.id, lastSeenAt: new Date() } })
     ]);
     return { ...tokens, accountType: user.accountType, profileRequired: user.accountType === AccountType.STUDENT ? !user.student : !user.teacher };
@@ -51,7 +53,7 @@ export class AuthService {
   async refresh(input: { refreshToken?: string }) {
     if (!input.refreshToken) apiError(400, "VALIDATION_ERROR", "refreshToken is required");
     let payload: { sub: string; username: string; accountType: AccountType };
-    try { payload = this.jwt.verify(input.refreshToken, { secret: process.env.JWT_REFRESH_SECRET ?? "local-development-refresh-secret-change-me" }); }
+    try { payload = this.jwt.verify(input.refreshToken, { secret: validateRuntimeConfig().jwtRefreshSecret, algorithms: ["HS256"] }); }
     catch { apiError(401, "SESSION_EXPIRED", "Refresh session is invalid or expired"); }
     const session = await this.prisma.authSession.findUnique({ where: { refreshTokenHash: refreshHash(input.refreshToken) } });
     if (!session || session.revokedAt || session.expiresAt <= new Date()) apiError(401, "SESSION_EXPIRED", "Refresh session is invalid or expired");
@@ -59,7 +61,7 @@ export class AuthService {
     const tokens = this.tokens(user);
     await this.prisma.$transaction([
       this.prisma.authSession.update({ where: { id: session.id }, data: { revokedAt: new Date() } }),
-      this.prisma.authSession.create({ data: { userId: user.id, refreshTokenHash: refreshHash(tokens.refreshToken), expiresAt: new Date(Date.now() + Number(process.env.REFRESH_TOKEN_TTL_DAYS ?? 7) * 86_400_000) } })
+      this.prisma.authSession.create({ data: { userId: user.id, refreshTokenHash: refreshHash(tokens.refreshToken), expiresAt: new Date(Date.now() + validateRuntimeConfig().refreshTokenTtlDays * 86_400_000) } })
     ]);
     return tokens;
   }

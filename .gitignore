@@ -4,10 +4,12 @@ dist/
 .next/
 .expo/
 coverage/
-.env
-.env.local
+.env*
+!.env.example
+!**/.env.example
 *.log
 *.tsbuildinfo
 apps/api/prisma/dev.db
 exports/
 /carbon.zip
+/backups/*.dump

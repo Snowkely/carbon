@@ -8,13 +8,18 @@ import { StudentController, StudentService } from "./student/student";
 import { TeacherController, TeacherService } from "./teacher/teacher";
 import { ScoringService } from "./student/scoring.service";
 import { FeedbackService, StudentFeedbackController, TeacherFeedbackController } from "./feedback/feedback";
+import { validateRuntimeConfig } from "./common/runtime-config";
+import { HealthController, HealthService } from "./health/health";
 
 @Module({
   imports: [
     PassportModule,
-    JwtModule.register({ secret: process.env.JWT_ACCESS_SECRET ?? "local-development-access-secret-change-me", signOptions: { expiresIn: (process.env.ACCESS_TOKEN_TTL ?? "15m") as never } })
+    JwtModule.registerAsync({ useFactory: () => {
+      const runtime = validateRuntimeConfig();
+      return { secret: runtime.jwtAccessSecret, signOptions: { expiresIn: runtime.accessTokenTtl as never, algorithm: "HS256" as const } };
+    } })
   ],
-  controllers: [AuthController, StudentController, StudentFeedbackController, TeacherController, TeacherFeedbackController],
-  providers: [PrismaService, JwtStrategy, AuthService, StudentService, TeacherService, FeedbackService, ScoringService]
+  controllers: [HealthController, AuthController, StudentController, StudentFeedbackController, TeacherController, TeacherFeedbackController],
+  providers: [PrismaService, JwtStrategy, HealthService, AuthService, StudentService, TeacherService, FeedbackService, ScoringService]
 })
 export class AppModule {}

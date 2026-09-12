@@ -637,7 +637,7 @@ model ScoreAdjustmentStream {
   missionAttempt      MissionAttempt?   @relation("MissionAdjustment", fields: [missionAttemptId], references: [id], onDelete: Restrict)
   attempt             Attempt?          @relation("AttemptAdjustment", fields: [attemptId], references: [id], onDelete: Restrict)
   adjustments         ScoreAdjustment[] @relation("AdjustmentStream")
-  currentAdjustment   ScoreAdjustment?  @relation("CurrentAdjustment", fields: [currentAdjustmentId], references: [id], onDelete: Restrict)
+  currentAdjustment   ScoreAdjustment?  @relation("CurrentAdjustment", fields: [currentAdjustmentId, id], references: [id, streamId], onDelete: Restrict)
 
   @@map("score_adjustment_stream")
 }
@@ -652,7 +652,7 @@ model ScoreAdjustment {
   adjustedByTeacherId    String                  @map("adjusted_by_teacher_id") @db.Uuid
   createdAt              DateTime                @default(now()) @map("created_at") @db.Timestamptz
   stream                 ScoreAdjustmentStream   @relation("AdjustmentStream", fields: [streamId], references: [id], onDelete: Restrict)
-  supersedes             ScoreAdjustment?        @relation("AdjustmentSupersede", fields: [supersedesAdjustmentId], references: [id], onDelete: Restrict)
+  supersedes             ScoreAdjustment?        @relation("AdjustmentSupersede", fields: [supersedesAdjustmentId, streamId], references: [id, streamId], onDelete: Restrict)
   supersededBy           ScoreAdjustment[]       @relation("AdjustmentSupersede")
   currentFor             ScoreAdjustmentStream[] @relation("CurrentAdjustment")
   adjustedBy             TeacherProfile          @relation(fields: [adjustedByTeacherId], references: [userId], onDelete: Restrict)

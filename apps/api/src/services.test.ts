@@ -303,6 +303,13 @@ describe("teacher transactions and authorization", () => {
     return {prisma:{workshopSession:{findUnique:vi.fn().mockResolvedValue({id:"s1",workshopId:"w1",status:SessionStatus.ACTIVE,workshop:{contentVersionId:"v1"}})},workshopTeacher:{findUnique:vi.fn().mockResolvedValue({role})},missionTemplate:{findUnique:vi.fn().mockResolvedValue({id:stableId.toLowerCase(),stableId,sequenceNo,contentVersionId:"v1"})},missionUnlock:{upsert}} as any,upsert};
   };
 
+  it("forbids a Student account from Teacher mutation paths", async () => {
+    const findUnique=vi.fn();
+    const prisma:any={workshopTeacher:{findUnique},workshopSession:{count:vi.fn()}};
+    await expect(new TeacherService(prisma,{} as any).createSession(student,"w1",{})).rejects.toSatisfy((error:unknown)=>(error as HttpException).getStatus()===403);
+    expect(findUnique).not.toHaveBeenCalled();
+  });
+
   it.each(["M2","M3","M4","M5","M6"])("allows OWNER to unlock %s without a Student prerequisite query",async(stableId)=>{
     const {prisma,upsert}=unlockPrisma(WorkshopRole.OWNER,stableId);
     await new TeacherService(prisma,{} as any).unlock(teacher,"s1",stableId.toLowerCase());

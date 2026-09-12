@@ -77,7 +77,7 @@ export default function App() {
 }
 
 function Login({ onLoggedIn }: { onLoggedIn: (token: string, profileRequired: boolean) => void }) {
-  const [username, setUsername] = useState("student.alex"); const [password, setPassword] = useState("Carbon123!"); const [busy, setBusy] = useState(false);
+  const [username, setUsername] = useState(""); const [password, setPassword] = useState(""); const [busy, setBusy] = useState(false);
   const login = async () => { setBusy(true); try { const data = await mobileApiRequest(API, "/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }); onLoggedIn(data.accessToken, data.profileRequired); } catch (error) { Alert.alert("Login failed", String(error)); } finally { setBusy(false); } };
   return <ScrollView contentContainerStyle={styles.page}><Text style={styles.hero}>Learn the market. Change the future.</Text><View style={styles.card}><Text style={styles.title}>Student Login / 学生登录</Text><TextInput accessibilityLabel="Username" style={styles.input} value={username} onChangeText={setUsername} autoCapitalize="none" /><TextInput accessibilityLabel="Password" style={styles.input} value={password} onChangeText={setPassword} secureTextEntry /><Button title={busy ? "Signing in…" : "Enter Carbon Trader"} onPress={login} disabled={busy} /></View></ScrollView>;
 }

@@ -7,6 +7,7 @@ import { PrismaService } from "../common/prisma.service";
 import { ScoringService } from "../student/scoring.service";
 import { CreateSessionDto, CreateWorkshopDto, ScoreAdjustmentDto, SetWorkshopTeacherDto, UpdateWorkshopDto } from "../openapi/request-dtos";
 import { scoreAdjustmentStreamResponse } from "./teacher-response";
+import { validateRuntimeConfig } from "../common/runtime-config";
 
 const json = (value: unknown) => value as Prisma.InputJsonValue;
 const MUTATORS: WorkshopRole[] = [WorkshopRole.OWNER, WorkshopRole.INSTRUCTOR];
@@ -176,7 +177,7 @@ export class TeacherService {
     const session = await this.prisma.workshopSession.findUnique({ where: { id: sessionId } });
     if (!session) apiError(404, "SESSION_NOT_FOUND", "Session not found");
     await this.membership(user, session.workshopId);
-    const threshold = Number(process.env.PRESENCE_OFFLINE_SECONDS ?? 30) * 1000;
+    const threshold = validateRuntimeConfig().presenceOfflineSeconds * 1000;
     const participants = await this.prisma.workshopParticipant.findMany({ where: { sessionId }, include: { student: true, attempts: { include: { missionAttempts: { include: { mission: true, currentScreen: true } } }, orderBy: { startedAt: "desc" } } } });
     return Promise.all(participants.map(async (participant) => {
       const allMissionAttempts = participant.attempts.flatMap((attempt) => attempt.missionAttempts);

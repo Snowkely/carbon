@@ -22,6 +22,7 @@ const cards = [
 ] as const;
 
 async function main() {
+  if (process.env.NODE_ENV === "production") throw new Error("Development seed is disabled in production");
   const school = await prisma.school.upsert({
     where: { code: "CARBON-DEMO" },
     update: {},
@@ -181,7 +182,7 @@ async function main() {
   }
 
   await publishPackageAContent(prisma);
-  console.log("Seed complete. Accounts: teacher.demo, student.alex, student.ben / Carbon123!");
+  console.log("Seed complete. Development demo accounts created.");
 }
 
 main().finally(() => prisma.$disconnect());

@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 const migration = readFileSync(resolve(process.cwd(), "prisma/migrations/20260831000100_init/migration.sql"), "utf8");
 const feedbackMigration = readFileSync(resolve(process.cwd(), "prisma/migrations/20260904000100_final_phase1_feedback/migration.sql"), "utf8");
 const hardeningMigration = readFileSync(resolve(process.cwd(), "prisma/migrations/20260904000200_final_phase1_hardening/migration.sql"), "utf8");
+const scoreAdjustmentIntegrityMigration = readFileSync(resolve(process.cwd(), "prisma/migrations/20260912000100_score_adjustment_same_stream_integrity/migration.sql"), "utf8");
 const schema = readFileSync(resolve(process.cwd(), "prisma/schema.prisma"), "utf8");
 const seed = readFileSync(resolve(process.cwd(), "prisma/seed.ts"), "utf8");
 const teacherService = readFileSync(resolve(process.cwd(), "src/teacher/teacher.ts"), "utf8");
@@ -27,8 +28,12 @@ describe("database-enforced frozen invariants", () => {
   });
 
   it("keeps both adjustment pointers in the same stream", () => {
-    expect(migration).toMatch(/score_adjustment_supersedes_same_stream_fkey[\s\S]*FOREIGN KEY \("supersedes_adjustment_id", "stream_id"\)[\s\S]*REFERENCES "score_adjustment" \("id", "stream_id"\)/);
-    expect(migration).toMatch(/score_adjustment_current_same_stream_fkey[\s\S]*FOREIGN KEY \("current_adjustment_id", "id"\)[\s\S]*REFERENCES "score_adjustment" \("id", "stream_id"\)/);
+    expect(scoreAdjustmentIntegrityMigration).toMatch(/score_adjustment_supersedes_same_stream_fkey[\s\S]*FOREIGN KEY \("supersedes_adjustment_id", "stream_id"\)[\s\S]*REFERENCES "score_adjustment" \("id", "stream_id"\)/);
+    expect(scoreAdjustmentIntegrityMigration).toMatch(/score_adjustment_current_same_stream_fkey[\s\S]*FOREIGN KEY \("current_adjustment_id", "id"\)[\s\S]*REFERENCES "score_adjustment" \("id", "stream_id"\)/);
+    expect(scoreAdjustmentIntegrityMigration).toContain('DROP CONSTRAINT "score_adjustment_supersedes_adjustment_id_fkey"');
+    expect(scoreAdjustmentIntegrityMigration).toContain('DROP CONSTRAINT "score_adjustment_stream_current_adjustment_id_fkey"');
+    expect(schema).toMatch(/CurrentAdjustment"\s*,\s*fields:\s*\[currentAdjustmentId, id\],\s*references:\s*\[id, streamId\]/);
+    expect(schema).toMatch(/AdjustmentSupersede"\s*,\s*fields:\s*\[supersedesAdjustmentId, streamId\],\s*references:\s*\[id, streamId\]/);
   });
 
   it("makes QuestionAttempt update and delete impossible", () => {

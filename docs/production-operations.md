@@ -1,6 +1,6 @@
 # Production operations
 
-This document is an operator checklist, not an automated deployment. API and Teacher Web containerization is intentionally deferred to Hardening C.
+This document is an operator checklist, not an automated deployment. Hardening C containerization and the isolated rehearsal/runbook are documented in [container-deployment.md](./container-deployment.md). The non-container principles below remain applicable.
 
 ## Runtime configuration
 

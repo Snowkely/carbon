@@ -104,7 +104,7 @@ pnpm test
 pnpm build
 ```
 
-Production configuration, health/readiness, migration ordering, and PostgreSQL backup/restore procedures are documented in [`docs/production-operations.md`](docs/production-operations.md).
+Production configuration, health/readiness, migration ordering, and PostgreSQL backup/restore procedures are documented in [`docs/production-operations.md`](docs/production-operations.md). Container architecture, isolated rehearsal, TLS readiness, rollback, and eventual deployment steps are in [`docs/container-deployment.md`](docs/container-deployment.md).
 
 The automated suite covers pure scoring/evaluation behavior, the final 15/15/15/15/20/20 IQ configuration, Option B availability, inactive-Session mutation blocking, answer secrecy, submission idempotency, versioned retry/Hint/Reveal rules, low-score completion, teacher authorization and transactions, ScoreAdjustment supersede concurrency/bounds, Feedback validation/version isolation, and SQL-enforced structural invariants. Database integration requires applying the migrations to PostgreSQL; the unit and structural suites do not require Redis.
 

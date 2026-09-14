@@ -9,6 +9,7 @@ import { SafeExceptionFilter, sanitizeDiagnostic } from "./common/safe-exception
 async function bootstrap() {
   const runtime = validateRuntimeConfig();
   const app = await NestFactory.create(AppModule);
+  app.enableShutdownHooks();
   app.getHttpAdapter().getInstance().disable("x-powered-by");
   app.enableCors({
     origin: (origin: string | undefined, callback: (error: Error | null, allow?: boolean) => void) => callback(null, corsOriginAllowed(origin, runtime)),

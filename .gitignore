@@ -1,8 +1,10 @@
 node_modules/
 .turbo/
 dist/
+dist-classroom/
 .next/
 .expo/
+.eas-bundle-test/
 coverage/
 .env*
 !.env.example
@@ -13,3 +15,8 @@ apps/api/prisma/dev.db
 exports/
 /carbon.zip
 /backups/*.dump
+**/*.dump
+deploy/local-classroom/downloads/*.apk
+deploy/local-classroom/downloads/*.aab
+*.jks
+*.keystore

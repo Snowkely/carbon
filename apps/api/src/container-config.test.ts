@@ -49,6 +49,7 @@ describe("production container configuration", () => {
     expect(nginx).toContain("zone=teacher_per_ip:10m rate=20r/s");
     expect(nginx).toContain("zone=api_per_ip:10m rate=100r/s");
     expect(nginx).toContain("limit_req_status 429");
+    expect(nginx).toMatch(/location = \/v1\/auth\/student\/register \{\s+limit_req zone=login_per_ip burst=60 nodelay;/);
   });
 
   it("does not enable HSTS before real HTTPS termination is configured", () => {

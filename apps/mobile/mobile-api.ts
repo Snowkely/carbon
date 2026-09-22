@@ -18,6 +18,17 @@ export class MobileApiProtocolError extends Error {
   }
 }
 
+export const CLASSROOM_SERVER_NOT_CONFIGURED = "CLASSROOM_SERVER_NOT_CONFIGURED";
+
+export class MobileApiConfigurationError extends Error {
+  readonly code = CLASSROOM_SERVER_NOT_CONFIGURED;
+
+  constructor() {
+    super("Classroom server not connected. Open Server settings to connect to your classroom.");
+    this.name = "MobileApiConfigurationError";
+  }
+}
+
 function responseErrorMessage(payload: unknown, status: number): string {
   if (payload && typeof payload === "object") {
     const body = payload as { message?: unknown; error?: { message?: unknown } };
@@ -48,13 +59,16 @@ export async function parseMobileApiResponse(response: ResponseLike, contract: M
 }
 
 export async function mobileApiRequest(
-  apiBase: string,
+  apiBase: string | null | undefined,
   path: string,
   options: RequestInit & { token?: string; responseContract?: MobileApiResponseContract; onUnauthorized?: () => void } = {}
 ): Promise<any> {
+  if (!apiBase) throw new MobileApiConfigurationError();
   const { token, responseContract, onUnauthorized, headers: suppliedHeaders, ...requestOptions } = options;
+  const method = (requestOptions.method ?? "GET").toUpperCase();
   const response = await fetch(`${apiBase}${path}`, {
     ...requestOptions,
+    ...(method === "GET" && path.startsWith("/student/") && requestOptions.cache === undefined ? { cache: "no-store" as const } : {}),
     headers: {
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),

@@ -10,6 +10,7 @@ import { ScoringService } from "./student/scoring.service";
 import { FeedbackService, StudentFeedbackController, TeacherFeedbackController } from "./feedback/feedback";
 import { validateRuntimeConfig } from "./common/runtime-config";
 import { HealthController, HealthService } from "./health/health";
+import { TeacherAccountController, TeacherAccountService } from "./teacher/account-management";
 
 @Module({
   imports: [
@@ -19,7 +20,7 @@ import { HealthController, HealthService } from "./health/health";
       return { secret: runtime.jwtAccessSecret, signOptions: { expiresIn: runtime.accessTokenTtl as never, algorithm: "HS256" as const } };
     } })
   ],
-  controllers: [HealthController, AuthController, StudentController, StudentFeedbackController, TeacherController, TeacherFeedbackController],
-  providers: [PrismaService, JwtStrategy, HealthService, AuthService, StudentService, TeacherService, FeedbackService, ScoringService]
+  controllers: [HealthController, AuthController, StudentController, StudentFeedbackController, TeacherController, TeacherAccountController, TeacherFeedbackController],
+  providers: [PrismaService, JwtStrategy, HealthService, AuthService, StudentService, TeacherService, TeacherAccountService, FeedbackService, ScoringService]
 })
 export class AppModule {}

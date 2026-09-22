@@ -22,6 +22,8 @@ Keep production values in the deployment platform's secret/config store. Do not 
 | `NEXT_PUBLIC_API_URL` | Public build config | Required for production Teacher Web build | Public API URL ending in `/v1`. Never place secrets here. |
 | `EXPO_PUBLIC_API_URL` | Public build config | Required for Mobile builds | Public API URL ending in `/v1`. Never place secrets here. |
 
+First-OWNER bootstrap additionally reads `ADMIN_OWNER_USERNAME`, `ADMIN_OWNER_DISPLAY_NAME`, `ADMIN_OWNER_PASSWORD`, and optionally `ADMIN_OWNER_SCHOOL_ID` from the operator environment. These values are used only by `pnpm admin:create-owner`; never place the password on the command line or commit it to an environment file. The command refuses to create another OWNER when one already exists.
+
 Local development may use localhost or a private LAN address explicitly. When local JWT secrets are omitted, the API generates process-local random secrets, so tokens expire when that development process restarts. Production has no default JWT secrets, database URL, CORS origin, or Teacher API URL. The checked-in seed is development-only and refuses to run when `NODE_ENV=production`.
 
 ## Controlled release order

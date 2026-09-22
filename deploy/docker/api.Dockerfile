@@ -36,6 +36,8 @@ RUN apk add --no-cache openssl \
 COPY --from=build --chown=node:node /opt/api ./
 COPY --from=build --chown=node:node /workspace/apps/api/dist ./dist
 COPY --from=build --chown=node:node /workspace/apps/api/prisma ./prisma
+# The non-HTTP OWNER bootstrap CLI reuses the same production runtime validator.
+COPY --from=build --chown=node:node /workspace/apps/api/src/common/runtime-config.ts ./src/common/runtime-config.ts
 USER node
 EXPOSE 3001
 STOPSIGNAL SIGTERM

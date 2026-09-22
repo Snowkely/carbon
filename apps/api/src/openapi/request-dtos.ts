@@ -1,15 +1,12 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { AccountType, ScoreTargetLevel, WorkshopRole } from "@prisma/client";
+import { ScoreTargetLevel, WorkshopRole } from "@prisma/client";
 
-export class RegisterDto {
+export class StudentRegistrationDto {
   @ApiProperty({ type: String, example: "student.demo", minLength: 3, maxLength: 80 })
   username!: string;
 
   @ApiProperty({ type: String, example: "example-password", minLength: 8, maxLength: 128, writeOnly: true })
   password!: string;
-
-  @ApiProperty({ type: String, enum: AccountType, example: AccountType.STUDENT })
-  accountType!: AccountType;
 }
 
 export class LoginDto {
@@ -42,6 +39,30 @@ export class StudentProfileDto {
 
   @ApiProperty({ type: String, example: "22222222-2222-4222-8222-222222222222", format: "uuid" })
   classId!: string;
+}
+
+export class CreateTeacherAccountDto {
+  @ApiProperty({ type: String, example: "teacher.one", minLength: 3, maxLength: 80 }) username!: string;
+  @ApiProperty({ type: String, example: "Teacher One", minLength: 1, maxLength: 150 }) displayName!: string;
+  @ApiProperty({ type: String, enum: ["INSTRUCTOR", "VIEWER"], example: "INSTRUCTOR" }) role!: "INSTRUCTOR" | "VIEWER";
+  @ApiProperty({ type: String, minLength: 8, maxLength: 128, writeOnly: true }) password!: string;
+}
+
+export class ChangeTeacherRoleDto {
+  @ApiProperty({ type: String, enum: ["INSTRUCTOR", "VIEWER"], example: "VIEWER" }) role!: "INSTRUCTOR" | "VIEWER";
+}
+
+export class ChangeTeacherStatusDto {
+  @ApiProperty({ type: String, enum: ["ACTIVE", "DISABLED"], example: "DISABLED" }) status!: "ACTIVE" | "DISABLED";
+}
+
+export class ResetTeacherPasswordDto {
+  @ApiProperty({ type: String, minLength: 8, maxLength: 128, writeOnly: true }) password!: string;
+}
+
+export class ChangeOwnPasswordDto {
+  @ApiProperty({ type: String, minLength: 8, maxLength: 128, writeOnly: true }) currentPassword!: string;
+  @ApiProperty({ type: String, minLength: 8, maxLength: 128, writeOnly: true }) newPassword!: string;
 }
 
 export class ValueChainNodeDto {

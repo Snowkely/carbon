@@ -14,10 +14,6 @@ const PACKAGE_C_GAMEPLAY_IMPLEMENTED: Readonly<Record<string, boolean>> = {
   M6: true
 };
 
-export function initializeTeacherRuntime(): { token: null } {
-  return { token: null };
-}
-
 export function teacherMissionPresentation(mission: TeacherMissionControlItem, sessionStatus: string) {
   const teacherUnlockable = /^M[2-6]$/.test(mission.stableId);
   const canUnlock = teacherUnlockable && mission.unlockState === "LOCKED_FOR_SESSION" && sessionStatus === "ACTIVE";

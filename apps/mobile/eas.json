@@ -1,0 +1,23 @@
+{
+  "cli": { "version": ">= 16.0.0" },
+  "build": {
+    "classroom": {
+      "distribution": "internal",
+      "environment": "preview",
+      "env": { "CLASSROOM_BUILD": "true" },
+      "android": { "buildType": "apk" },
+      "ios": { "simulator": false }
+    },
+    "preview": {
+      "distribution": "internal",
+      "environment": "preview",
+      "env": { "CLASSROOM_BUILD": "true" },
+      "android": { "buildType": "apk" }
+    },
+    "production": {
+      "distribution": "store",
+      "environment": "production",
+      "env": { "CLASSROOM_BUILD": "false" }
+    }
+  }
+}

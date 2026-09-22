@@ -1,7 +1,8 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import Constants from "expo-constants";
 import { StatusBar } from "expo-status-bar";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, Linking, Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { colors, formatScore } from "@carbon/ui-tokens";
 import { createUnauthorizedCoordinator, type MissionScoreBreakdownDto } from "@carbon/contracts";
 import { MissionHeader } from "./MissionHeader";
@@ -14,10 +15,18 @@ import { isHandledUnauthorized, mobileApiRequest, type MobileApiResponseContract
 import { MissionScoreBreakdown } from "./MissionScoreBreakdown";
 import { FeedbackFooter, HomeRefreshControl, StudentHomeHeader } from "./StudentControls";
 import { StudentHistory } from "./StudentHistory";
+import { StudentLoginView, StudentRegistrationView } from "./StudentAuth";
+import { createRegistrationSubmissionGate, registerStudentAccount, registrationErrorMessage, validateStudentRegistration } from "./student-registration";
+import { classroomHealthUrl, loadSavedClassroomApi, parseClassroomDeepLink, resetClassroomApi, saveClassroomApi, validateClassroomApiBase } from "./classroom-server";
+import { clearStudentTokens, persistStudentTokens, readStudentTokens, restoreStudentSession, type StudentTokens } from "./student-session";
+import { isClassroomStudentWeb, studentWebApiBase } from "./student-web";
 import { backToStudentHome, buildFeedbackResponses, emptyFeedbackDraft, fetchStudentHomeState, initializeStudentRuntime, isFeedbackComplete, normalizeHistoryPayload, screenAfterLogin, userFacingError, type FeedbackDraft, type HistoryItem, type StudentFinalResult, type StudentMission as Mission, type StudentScreen, type StudentSession as Session } from "./student-state";
 
-const API = process.env.EXPO_PUBLIC_API_URL ?? "";
-if (!API) throw new Error("EXPO_PUBLIC_API_URL must be configured");
+const DEFAULT_API = process.env.EXPO_PUBLIC_API_URL?.trim() || null;
+const CLASSROOM_BUILD = Constants.expoConfig?.extra?.classroomBuild === true;
+const CLASSROOM_WEB = isClassroomStudentWeb(Platform.OS, Constants.expoConfig?.extra?.classroomWeb);
+const CLASSROOM_WEB_API = CLASSROOM_WEB && typeof window !== "undefined" ? studentWebApiBase(window.location.origin) : null;
+let API: string | null = null;
 const INITIAL_STUDENT_RUNTIME = initializeStudentRuntime();
 const VALUE_CHAIN_NODES = ["Raw materials", "Dyeing", "Assembly", "Logistics", "Retail", "Use phase", "End of life"];
 
@@ -41,10 +50,13 @@ export default function App() {
   const [missionAttemptId, setMissionAttemptId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [homeError, setHomeError] = useState<string | null>(null);
+  const [serverReady, setServerReady] = useState(false);
+  const [currentServer, setCurrentServer] = useState<string | null>(null);
+  const [serverConfigurationError, setServerConfigurationError] = useState<string | null>(null);
   const [feedbackDrafts, setFeedbackDrafts] = useState<Record<string, FeedbackDraft>>({});
   const unauthorized = useRef(createUnauthorizedCoordinator());
   const clearAuthenticatedState = useCallback(async () => {
-    await AsyncStorage.removeItem("accessToken"); setToken(null); setSession(null); setMissions([]); setFinalResult(null); setMissionAttemptId(null); setScreen("login");
+    await clearStudentTokens(AsyncStorage); setToken(null); setSession(null); setMissions([]); setFinalResult(null); setMissionAttemptId(null); setScreen("login");
   }, []);
   const onUnauthorized = useCallback(() => {
     unauthorized.current.notify(
@@ -52,23 +64,83 @@ export default function App() {
       clearAuthenticatedState
     );
   }, [clearAuthenticatedState]);
+  const activateServer = useCallback(async (candidate: string) => {
+    const next = validateClassroomApiBase(candidate);
+    const health = await fetch(classroomHealthUrl(next));
+    if (!health.ok) throw new Error(`Classroom server health check failed (HTTP ${health.status})`);
+    await saveClassroomApi(next);
+    API = next; setCurrentServer(next); setServerConfigurationError(null);
+    await clearAuthenticatedState();
+  }, [clearAuthenticatedState]);
+  const offerDeepLink = useCallback((value: string) => {
+    let candidate: string;
+    try { candidate = parseClassroomDeepLink(value); } catch (error) { Alert.alert("Invalid classroom link", String(error)); return; }
+    Alert.alert("Connect to classroom server?", candidate, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Connect", onPress: () => { void activateServer(candidate).then(() => Alert.alert("Connected", `Now using ${candidate}`)).catch((error) => Alert.alert("Connection failed", String(error))); } }
+    ]);
+  }, [activateServer]);
+  useEffect(() => {
+    let mounted = true;
+    let subscription: { remove: () => void } | undefined;
+    void (async () => {
+      let value: string | null = null;
+      try {
+        value = CLASSROOM_WEB_API ?? await loadSavedClassroomApi(DEFAULT_API, CLASSROOM_BUILD);
+        if (!mounted) return;
+        API = value; setCurrentServer(value); setServerConfigurationError(null);
+      } catch (error) {
+        if (!mounted) return;
+        API = null; setCurrentServer(null); setServerConfigurationError(String(error));
+      }
+      if (value) {
+        try {
+          const restored = await restoreStudentSession(AsyncStorage, value);
+          if (mounted && restored) {
+            setToken(restored.tokens.accessToken);
+            setScreen(screenAfterLogin(restored.profileRequired));
+          }
+        } catch (error) {
+          if (mounted) setServerConfigurationError(`Could not restore student session: ${String(error)}`);
+        }
+      }
+      if (!mounted) return;
+      setServerReady(true);
+      if (!CLASSROOM_WEB) {
+        subscription = Linking.addEventListener("url", ({ url }) => offerDeepLink(url));
+        const initialUrl = await Linking.getInitialURL();
+        if (mounted && initialUrl?.startsWith("carbontrader://")) offerDeepLink(initialUrl);
+      }
+    })();
+    return () => { mounted = false; subscription?.remove(); };
+  }, [offerDeepLink]);
 
-  const request = (path: string, options: RequestInit = {}, responseContract?: MobileApiResponseContract) =>
-    mobileApiRequest(API, path, { ...options, token: token ?? undefined, responseContract, onUnauthorized });
-  const loadHome = async () => {
-    setRefreshing(true); setHomeError(null);
+  const request = useCallback((path: string, options: RequestInit = {}, responseContract?: MobileApiResponseContract) =>
+    mobileApiRequest(API, path, { ...options, token: token ?? undefined, responseContract, onUnauthorized }), [token, onUnauthorized]);
+  const loadHome = useCallback(async (silent = false) => {
+    if (!silent) setRefreshing(true); setHomeError(null);
     try {
       const next = await fetchStudentHomeState(request); setSession(next.session); setMissions(next.missions); setFinalResult(next.finalResult);
-    } catch (error) { if (isHandledUnauthorized(error)) return; if (String(error).toLowerCase().includes("profile")) setScreen("profile"); else { const message = userFacingError(error); setHomeError(message); Alert.alert("Refresh failed", message); } }
-    finally { setRefreshing(false); }
-  };
-  useEffect(() => { if (token && screen === "home") void loadHome(); }, [token, screen]);
-  const logout = clearAuthenticatedState;
+    } catch (error) { if (isHandledUnauthorized(error)) return; if (String(error).toLowerCase().includes("profile")) setScreen("profile"); else { const message = userFacingError(error); setHomeError(message); if (!silent) Alert.alert("Refresh failed", message); } }
+    finally { if (!silent) setRefreshing(false); }
+  }, [request]);
+  useEffect(() => { if (token && currentServer && screen === "home") void loadHome(true); }, [token, currentServer, screen, loadHome]);
+  useEffect(() => { if (!token || !currentServer || screen !== "home" || session) return; const timer = setInterval(() => void loadHome(true), 5000); return () => clearInterval(timer); }, [token, currentServer, screen, session, loadHome]);
+  const acceptAuthenticatedSession = useCallback(async (tokens: StudentTokens, profileRequired: boolean) => { unauthorized.current.reset(); await persistStudentTokens(AsyncStorage, tokens); setToken(tokens.accessToken); setScreen(screenAfterLogin(profileRequired)); }, []);
+  const logout = useCallback(async () => {
+    const tokens = await readStudentTokens(AsyncStorage);
+    if (API && tokens) void mobileApiRequest(API, "/auth/logout", { method: "POST", token: tokens.accessToken, body: JSON.stringify({ refreshToken: tokens.refreshToken }), responseContract: { allowEmptyBody: true } }).catch(() => undefined);
+    await clearAuthenticatedState();
+  }, [clearAuthenticatedState]);
+  if (!serverReady) return <SafeAreaView style={styles.safe}><View style={styles.center}><ActivityIndicator /><Text>Loading classroom settings…</Text></View></SafeAreaView>;
   return <SafeAreaView style={styles.safe}><StatusBar style="dark" />
-    <View style={styles.header}><View><Text style={styles.brand}>CARBON TRADER I</Text><Text style={styles.subtitle}>Carbon Market Explorer</Text></View>{token && <Pressable onPress={logout}><Text style={styles.link}>Logout</Text></Pressable>}</View>
-    {screen === "login" && <Login onLoggedIn={async (value, profileRequired) => { unauthorized.current.reset(); await AsyncStorage.setItem("accessToken", value); setToken(value); setScreen(screenAfterLogin(profileRequired)); }} />}
+    <View style={styles.header}><View style={styles.headerBrand}><Text style={styles.brand}>CARBON TRADER I</Text><Text style={styles.subtitle}>Carbon Market Explorer</Text></View><View style={styles.headerActions}>{!CLASSROOM_WEB && <Pressable onPress={() => setScreen("server")}><Text style={styles.link}>Server</Text></Pressable>}{token && <Pressable onPress={() => void logout()}><Text style={styles.link}>Logout</Text></Pressable>}</View></View>
+    {!currentServer && <View style={styles.serverNotice}><Text style={styles.cardTitle}>Classroom server not connected</Text><Text style={styles.body}>{serverConfigurationError ?? "Open Server settings or scan your classroom connection QR code to connect."}</Text></View>}
+    {!CLASSROOM_WEB && screen === "server" && <ServerSettings currentServer={currentServer} onBack={() => setScreen(token ? "home" : "login")} onChange={activateServer} onReset={async () => { const next = await resetClassroomApi(DEFAULT_API, CLASSROOM_BUILD); API = next; setCurrentServer(next); await clearAuthenticatedState(); }} />}
+    {screen === "login" && <Login onCreateAccount={() => setScreen("registration")} onLoggedIn={acceptAuthenticatedSession} />}
+    {screen === "registration" && <Registration onSignIn={() => setScreen("login")} onRegistered={acceptAuthenticatedSession} />}
     {screen === "profile" && <Profile token={token!} onUnauthorized={onUnauthorized} onDone={() => setScreen("home")} />}
-    {screen === "home" && <Home session={session} missions={missions} finalResult={finalResult} refreshing={refreshing} refreshError={homeError} onRefresh={loadHome} onOpen={async (mission) => { const action = resolveMissionOpen(mission); if (action.kind === "BLOCKED") { if (mission.accessState === "ACTIVE_ATTEMPT") Alert.alert("Continue", "The active attempt could not be resolved. Refresh and try again."); else if (mission.accessState === "AVAILABLE") Alert.alert("Mission unavailable", "This Mission's gameplay is not available yet."); return; } if (action.kind === "RESUME") { const target = resumeMission(action.missionAttemptId); setMissionAttemptId(target.missionAttemptId); setScreen(target.screen); return; } const attempt = await request(`/student/sessions/${session!.id}/missions/${mission.missionTemplateId}/attempts`, { method: "POST" }); setMissionAttemptId(attempt.id); setScreen("mission"); }} onResult={() => setScreen("result")} onHistory={() => setScreen("history")} onFeedback={() => setScreen("feedback")} />}
+    {screen === "home" && <Home session={session} missions={missions} finalResult={finalResult} refreshing={refreshing} refreshError={homeError} onRefresh={() => void loadHome()} onOpen={async (mission) => { const action = resolveMissionOpen(mission); if (action.kind === "BLOCKED") { if (mission.accessState === "ACTIVE_ATTEMPT") Alert.alert("Continue", "The active attempt could not be resolved. Refresh and try again."); else if (mission.accessState === "AVAILABLE") Alert.alert("Mission unavailable", "This Mission's gameplay is not available yet."); return; } if (action.kind === "RESUME") { const target = resumeMission(action.missionAttemptId); setMissionAttemptId(target.missionAttemptId); setScreen(target.screen); return; } const attempt = await request(`/student/sessions/${session!.id}/missions/${mission.missionTemplateId}/attempts`, { method: "POST" }); setMissionAttemptId(attempt.id); setScreen("mission"); }} onResult={() => setScreen("result")} onHistory={() => setScreen("history")} onFeedback={() => setScreen("feedback")} />}
     {screen === "result" && finalResult && <ScrollView contentContainerStyle={styles.page}><StudentHomeHeader onHome={() => setScreen("home")} /><FinalResultView result={finalResult} onFeedback={() => setScreen("feedback")} /></ScrollView>}
     {screen === "mission" && missionAttemptId && <MissionPlayer token={token!} missionAttemptId={missionAttemptId} onUnauthorized={onUnauthorized} onBack={() => { const target = backToHomeFromMission(missionAttemptId); setMissionAttemptId(target.missionAttemptId); setScreen(target.screen); }} onDone={() => { setMissionAttemptId(null); setScreen("home"); }} onFeedback={() => setScreen("feedback")} />}
     {screen === "history" && <History token={token!} onUnauthorized={onUnauthorized} onBack={() => setScreen(backToStudentHome())} />}
@@ -76,10 +148,38 @@ export default function App() {
   </SafeAreaView>;
 }
 
-function Login({ onLoggedIn }: { onLoggedIn: (token: string, profileRequired: boolean) => void }) {
+function ServerSettings({ currentServer, onBack, onChange, onReset }: { currentServer: string | null; onBack: () => void; onChange: (value: string) => Promise<void>; onReset: () => Promise<void> }) {
+  const [draft, setDraft] = useState(currentServer ?? ""); const [busy, setBusy] = useState(false);
+  const confirmChange = () => {
+    let candidate: string;
+    try { candidate = validateClassroomApiBase(draft); } catch (error) { Alert.alert("Invalid server", String(error)); return; }
+    Alert.alert("Change classroom server?", `${candidate}\n\nYou will be signed out before this server is used.`, [{ text: "Cancel", style: "cancel" }, { text: "Change", onPress: () => { setBusy(true); void onChange(candidate).then(() => Alert.alert("Connected", "Classroom server changed successfully.")).catch((error) => Alert.alert("Connection failed", String(error))).finally(() => setBusy(false)); } }]);
+  };
+  const confirmReset = () => Alert.alert("Reset to default server?", "You will be signed out before the default server is used.", [{ text: "Cancel", style: "cancel" }, { text: "Reset", onPress: () => { setBusy(true); void onReset().finally(() => setBusy(false)); } }]);
+  return <ScrollView contentContainerStyle={styles.page}><View style={styles.card}><Text style={styles.kicker}>CLASSROOM CONNECTION</Text><Text style={styles.title}>Server settings</Text><Text style={styles.label}>Current server</Text><Text style={styles.readonly}>{currentServer ?? "Classroom server not connected"}</Text><Text style={styles.label}>Change classroom server</Text><TextInput autoCapitalize="none" autoCorrect={false} style={styles.input} value={draft} onChangeText={setDraft} placeholder="Enter classroom API URL ending in /v1" /><Button title={busy ? "Checking…" : "Change classroom server"} onPress={confirmChange} disabled={busy} /><Button title="Reset to default server" tone="plain" onPress={confirmReset} disabled={busy} /><Button title="Back" tone="plain" onPress={onBack} disabled={busy} /><Text style={styles.body}>Changing servers clears your authenticated session so credentials from one classroom are never sent to another.</Text></View></ScrollView>;
+}
+
+function Login({ onLoggedIn, onCreateAccount }: { onLoggedIn: (tokens: StudentTokens, profileRequired: boolean) => void | Promise<void>; onCreateAccount: () => void }) {
   const [username, setUsername] = useState(""); const [password, setPassword] = useState(""); const [busy, setBusy] = useState(false);
-  const login = async () => { setBusy(true); try { const data = await mobileApiRequest(API, "/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }); onLoggedIn(data.accessToken, data.profileRequired); } catch (error) { Alert.alert("Login failed", String(error)); } finally { setBusy(false); } };
-  return <ScrollView contentContainerStyle={styles.page}><Text style={styles.hero}>Learn the market. Change the future.</Text><View style={styles.card}><Text style={styles.title}>Student Login / 学生登录</Text><TextInput accessibilityLabel="Username" style={styles.input} value={username} onChangeText={setUsername} autoCapitalize="none" /><TextInput accessibilityLabel="Password" style={styles.input} value={password} onChangeText={setPassword} secureTextEntry /><Button title={busy ? "Signing in…" : "Enter Carbon Trader"} onPress={login} disabled={busy} /></View></ScrollView>;
+  const login = async () => { setBusy(true); try { const data = await mobileApiRequest(API, "/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }); await onLoggedIn({ accessToken: data.accessToken, refreshToken: data.refreshToken }, data.profileRequired); } catch (error) { Alert.alert("Login failed", String(error)); } finally { setBusy(false); } };
+  return <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.page}><Text style={styles.hero}>Learn the market. Change the future.</Text><StudentLoginView username={username} password={password} busy={busy} onUsernameChange={setUsername} onPasswordChange={setPassword} onSubmit={login} onCreateAccount={onCreateAccount} /></ScrollView>;
+}
+
+function Registration({ onRegistered, onSignIn }: { onRegistered: (tokens: StudentTokens, profileRequired: boolean) => void | Promise<void>; onSignIn: () => void }) {
+  const [username, setUsername] = useState(""); const [password, setPassword] = useState(""); const [confirmPassword, setConfirmPassword] = useState(""); const [busy, setBusy] = useState(false); const [error, setError] = useState<string | null>(null); const submissionGate = useRef(createRegistrationSubmissionGate());
+  const register = async () => {
+    const validationError = validateStudentRegistration({ username, password, confirmPassword });
+    if (validationError) { setError(validationError); return; }
+    await submissionGate.current.run(async () => {
+      setBusy(true); setError(null);
+      try {
+        const data = await registerStudentAccount({ username, password, confirmPassword }, (path, options) => mobileApiRequest(API, path, options));
+        await onRegistered({ accessToken: data.accessToken, refreshToken: data.refreshToken }, data.profileRequired);
+      } catch (requestError) { setError(registrationErrorMessage(requestError)); }
+      finally { setBusy(false); }
+    });
+  };
+  return <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.page}><StudentRegistrationView username={username} password={password} confirmPassword={confirmPassword} busy={busy} error={error} onUsernameChange={setUsername} onPasswordChange={setPassword} onConfirmPasswordChange={setConfirmPassword} onSubmit={register} onSignIn={onSignIn} /></ScrollView>;
 }
 
 function Profile({ token, onUnauthorized, onDone }: { token: string; onUnauthorized: () => void; onDone: () => void }) {
@@ -239,4 +339,4 @@ function History({ token, onUnauthorized, onBack }: { token: string; onUnauthori
   return <ScrollView contentContainerStyle={styles.page}><StudentHistory items={items} loading={loadingHistory} error={historyError} onHome={onBack} /></ScrollView>;
 }
 
-const styles = StyleSheet.create({ safe: { flex: 1, backgroundColor: colors.canvas }, center: { flex: 1, alignItems: "center", justifyContent: "center" }, header: { padding: 16, borderBottomWidth: 1, borderColor: colors.border, backgroundColor: "white", flexDirection: "row", justifyContent: "space-between", alignItems: "center" }, brand: { color: colors.forest, fontSize: 20, fontWeight: "900" }, subtitle: { color: colors.leaf, fontWeight: "700" }, link: { color: colors.navy }, page: { padding: 16, gap: 14, paddingBottom: 48 }, hero: { fontSize: 28, lineHeight: 36, fontWeight: "900", color: colors.navy, marginVertical: 24 }, heroCard: { backgroundColor: "#eaf6ec", borderRadius: 22, padding: 22, borderWidth: 1, borderColor: "#bfd9c4" }, card: { backgroundColor: "white", borderRadius: 16, padding: 16, borderWidth: 1, borderColor: colors.border, gap: 12 }, title: { fontSize: 23, fontWeight: "800", color: colors.ink }, cardTitle: { fontSize: 17, fontWeight: "800", color: colors.ink }, section: { color: colors.navy, fontSize: 18, fontWeight: "800", marginTop: 8 }, kicker: { color: colors.forest, fontWeight: "900", fontSize: 12, letterSpacing: 1 }, body: { color: colors.muted, lineHeight: 21 }, simulation: { alignSelf: "flex-start", color: "#805b12", backgroundColor: "#fff3d6", borderColor: "#d6a744", borderWidth: 1, borderRadius: 99, paddingHorizontal: 10, paddingVertical: 5, fontWeight: "800" }, input: { borderWidth: 1, borderColor: colors.border, borderRadius: 10, padding: 12, backgroundColor: "white" }, multiline: { minHeight: 120, textAlignVertical: "top" }, label: { fontWeight: "700", color: colors.ink }, readonly: { padding: 12, backgroundColor: "#eef3ef", borderRadius: 10 }, button: { backgroundColor: colors.forest, paddingHorizontal: 15, paddingVertical: 12, borderRadius: 10, alignItems: "center", justifyContent: "center" }, navy: { backgroundColor: colors.navy }, plain: { backgroundColor: "white", borderWidth: 1, borderColor: colors.border }, disabled: { opacity: 0.4 }, buttonText: { color: "white", fontWeight: "800" }, plainText: { color: colors.navy }, choice: { padding: 12, borderWidth: 1, borderColor: colors.border, borderRadius: 10 }, choiceSelected: { backgroundColor: "#dff1e2", borderColor: colors.forest }, row: { flexDirection: "row", gap: 8 }, wrap: { flexDirection: "row", flexWrap: "wrap", gap: 8 }, grow: { flex: 1 }, missionCard: { flexDirection: "row", gap: 12, alignItems: "center", backgroundColor: "white", borderWidth: 1, borderColor: colors.border, padding: 14, borderRadius: 16 }, badge: { backgroundColor: colors.navy, borderRadius: 20, width: 42, height: 42, alignItems: "center", justifyContent: "center" }, badgeText: { color: "white", fontWeight: "900" }, state: { color: colors.muted, marginTop: 5, fontSize: 12, fontWeight: "700" }, available: { color: colors.forest }, success: { color: colors.forest, fontWeight: "800" }, feedback: { backgroundColor: "#fff8e8", padding: 10, borderRadius: 8, color: colors.ink }, progress: { height: 6, borderRadius: 3, backgroundColor: colors.border, overflow: "hidden" }, progressFill: { height: 6, backgroundColor: colors.forest } });
+const styles = StyleSheet.create({ safe: { flex: 1, backgroundColor: colors.canvas }, center: { flex: 1, alignItems: "center", justifyContent: "center" }, header: { padding: 16, borderBottomWidth: 1, borderColor: colors.border, backgroundColor: "white", flexDirection: "row", flexWrap: "wrap", gap: 12, justifyContent: "space-between", alignItems: "center" }, headerBrand: { flexShrink: 1, minWidth: 0 }, headerActions: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 16 }, serverNotice: { margin: 16, marginBottom: 0, padding: 14, gap: 6, borderRadius: 12, borderWidth: 1, borderColor: "#d6a744", backgroundColor: "#fff8e8" }, brand: { color: colors.forest, fontSize: 20, fontWeight: "900" }, subtitle: { color: colors.leaf, fontWeight: "700" }, link: { color: colors.navy, minHeight: 44, paddingVertical: 12 }, page: { width: "100%", maxWidth: 760, alignSelf: "center", padding: 16, gap: 14, paddingBottom: 48 }, hero: { fontSize: 28, lineHeight: 36, fontWeight: "900", color: colors.navy, marginVertical: 24 }, heroCard: { backgroundColor: "#eaf6ec", borderRadius: 22, padding: 22, borderWidth: 1, borderColor: "#bfd9c4" }, card: { backgroundColor: "white", borderRadius: 16, padding: 16, borderWidth: 1, borderColor: colors.border, gap: 12 }, title: { fontSize: 23, fontWeight: "800", color: colors.ink }, cardTitle: { fontSize: 17, fontWeight: "800", color: colors.ink }, section: { color: colors.navy, fontSize: 18, fontWeight: "800", marginTop: 8 }, kicker: { color: colors.forest, fontWeight: "900", fontSize: 12, letterSpacing: 1 }, body: { color: colors.muted, lineHeight: 21 }, simulation: { alignSelf: "flex-start", color: "#805b12", backgroundColor: "#fff3d6", borderColor: "#d6a744", borderWidth: 1, borderRadius: 99, paddingHorizontal: 10, paddingVertical: 5, fontWeight: "800" }, input: { minHeight: 48, borderWidth: 1, borderColor: colors.border, borderRadius: 10, padding: 12, backgroundColor: "white" }, multiline: { minHeight: 120, textAlignVertical: "top" }, label: { fontWeight: "700", color: colors.ink }, readonly: { padding: 12, backgroundColor: "#eef3ef", borderRadius: 10 }, button: { minHeight: 44, backgroundColor: colors.forest, paddingHorizontal: 15, paddingVertical: 12, borderRadius: 10, alignItems: "center", justifyContent: "center" }, navy: { backgroundColor: colors.navy }, plain: { backgroundColor: "white", borderWidth: 1, borderColor: colors.border }, disabled: { opacity: 0.4 }, buttonText: { color: "white", fontWeight: "800" }, plainText: { color: colors.navy }, choice: { minHeight: 44, padding: 12, borderWidth: 1, borderColor: colors.border, borderRadius: 10 }, choiceSelected: { backgroundColor: "#dff1e2", borderColor: colors.forest }, row: { flexDirection: "row", flexWrap: "wrap", gap: 8 }, wrap: { flexDirection: "row", flexWrap: "wrap", gap: 8 }, grow: { flex: 1, minWidth: 0 }, missionCard: { flexDirection: "row", flexWrap: "wrap", gap: 12, alignItems: "center", backgroundColor: "white", borderWidth: 1, borderColor: colors.border, padding: 14, borderRadius: 16 }, badge: { backgroundColor: colors.navy, borderRadius: 20, width: 42, height: 42, alignItems: "center", justifyContent: "center" }, badgeText: { color: "white", fontWeight: "900" }, state: { color: colors.muted, marginTop: 5, fontSize: 12, fontWeight: "700" }, available: { color: colors.forest }, success: { color: colors.forest, fontWeight: "800" }, feedback: { backgroundColor: "#fff8e8", padding: 10, borderRadius: 8, color: colors.ink }, progress: { height: 6, borderRadius: 3, backgroundColor: colors.border, overflow: "hidden" }, progressFill: { height: 6, backgroundColor: colors.forest } });

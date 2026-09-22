@@ -1,0 +1,205 @@
+name: ${COMPOSE_PROJECT_NAME:-carbon-trader-classroom}
+
+x-api-environment: &api-environment
+  NODE_ENV: production
+  PORT: 3001
+  DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+  REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+  JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?JWT_ACCESS_SECRET is required}
+  JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET is required}
+  CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?CORS_ALLOWED_ORIGINS is required}
+  ACCESS_TOKEN_TTL: ${ACCESS_TOKEN_TTL:-15m}
+  REFRESH_TOKEN_TTL_DAYS: ${REFRESH_TOKEN_TTL_DAYS:-7}
+  PRESENCE_OFFLINE_SECONDS: ${PRESENCE_OFFLINE_SECONDS:-30}
+  HEALTH_TIMEOUT_MS: ${HEALTH_TIMEOUT_MS:-1500}
+
+x-app-security: &app-security
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: ["ALL"]
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-carbon}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-carbon_trader}
+    volumes: ["classroom_postgres_data:/var/lib/postgresql/data"]
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    user: redis
+    volumes: ["classroom_redis_data:/data"]
+    networks: [backend]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    read_only: true
+    tmpfs: ["/tmp"]
+    <<: *app-security
+
+  migrate:
+    image: ${COMPOSE_PROJECT_NAME:-carbon-trader-classroom}-api
+    build:
+      context: .
+      dockerfile: deploy/docker/api.Dockerfile
+    command: ["./node_modules/.bin/prisma", "migrate", "deploy", "--schema", "prisma/schema.prisma"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+    depends_on:
+      postgres: { condition: service_healthy }
+    networks: [backend]
+    restart: "no"
+    read_only: true
+    tmpfs: ["/tmp"]
+    <<: *app-security
+
+  classroom-initialize:
+    image: ${COMPOSE_PROJECT_NAME:-carbon-trader-classroom}-api
+    build:
+      context: .
+      dockerfile: deploy/docker/api.Dockerfile
+    command: ["./node_modules/.bin/tsx", "prisma/seed.ts"]
+    environment:
+      <<: *api-environment
+      CLASSROOM_BOOTSTRAP: "true"
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    networks: [backend]
+    restart: "no"
+    read_only: true
+    tmpfs: ["/tmp"]
+    <<: *app-security
+
+  api:
+    image: ${COMPOSE_PROJECT_NAME:-carbon-trader-classroom}-api
+    build:
+      context: .
+      dockerfile: deploy/docker/api.Dockerfile
+    environment: *api-environment
+    depends_on:
+      classroom-initialize: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    networks: [backend, edge]
+    expose: ["3001"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    restart: unless-stopped
+    read_only: true
+    tmpfs: ["/tmp"]
+    <<: *app-security
+
+  teacher-web:
+    build:
+      context: .
+      dockerfile: deploy/docker/teacher-web.Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: /v1
+    environment:
+      ANDROID_APP_INSTALL_URL: ${ANDROID_APP_INSTALL_URL:-}
+      ANDROID_APP_VERSION: ${ANDROID_APP_VERSION:-}
+      IOS_APP_INSTALL_URL: ${IOS_APP_INSTALL_URL:-}
+    depends_on:
+      api: { condition: service_healthy }
+    networks: [edge]
+    expose: ["3000"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/classroom').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    restart: unless-stopped
+    read_only: true
+    tmpfs: ["/tmp", "/app/apps/teacher-web/.next/cache"]
+    <<: *app-security
+
+  student-web:
+    build:
+      context: .
+      dockerfile: deploy/docker/student-web.Dockerfile
+    networks: [edge]
+    expose: ["8080"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/student"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    restart: unless-stopped
+    read_only: true
+    tmpfs: ["/tmp", "/var/run"]
+    <<: *app-security
+
+  reverse-proxy:
+    image: nginxinc/nginx-unprivileged:1.27-alpine
+    depends_on:
+      api: { condition: service_healthy }
+      teacher-web: { condition: service_healthy }
+      student-web: { condition: service_healthy }
+    ports: ["0.0.0.0:${CLASSROOM_PORT:-8088}:8080"]
+    networks: [edge]
+    volumes:
+      - ./deploy/local-classroom/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./deploy/nginx/proxy_params:/etc/nginx/proxy_params:ro
+      - ./deploy/nginx/upstream-unavailable.html:/usr/share/nginx/html/upstream-unavailable.html:ro
+      - ./deploy/local-classroom/downloads:/usr/share/nginx/downloads:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/proxy-health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+    read_only: true
+    tmpfs: ["/tmp", "/var/run"]
+    <<: *app-security
+
+  admin-owner-status:
+    profiles: [admin]
+    image: ${COMPOSE_PROJECT_NAME:-carbon-trader-classroom}-api
+    build: { context: ., dockerfile: deploy/docker/api.Dockerfile }
+    command: ["./node_modules/.bin/tsx", "prisma/owner-status.ts"]
+    environment: *api-environment
+    networks: [backend]
+    read_only: true
+    tmpfs: ["/tmp"]
+    <<: *app-security
+
+  admin-create-owner:
+    profiles: [admin]
+    image: ${COMPOSE_PROJECT_NAME:-carbon-trader-classroom}-api
+    build: { context: ., dockerfile: deploy/docker/api.Dockerfile }
+    command: ["./node_modules/.bin/tsx", "prisma/create-owner.ts"]
+    environment:
+      <<: *api-environment
+      ADMIN_OWNER_USERNAME: ${ADMIN_OWNER_USERNAME:-}
+      ADMIN_OWNER_DISPLAY_NAME: ${ADMIN_OWNER_DISPLAY_NAME:-}
+      ADMIN_OWNER_PASSWORD: ${ADMIN_OWNER_PASSWORD:-}
+    networks: [backend]
+    read_only: true
+    tmpfs: ["/tmp"]
+    <<: *app-security
+
+networks:
+  backend: { internal: true }
+  edge:
+
+volumes:
+  classroom_postgres_data:
+  classroom_redis_data:

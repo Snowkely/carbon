@@ -7,14 +7,16 @@ import { AuthController, AuthService } from "../auth/auth";
 import { FeedbackService, StudentFeedbackController, TeacherFeedbackController } from "../feedback/feedback";
 import { StudentController, StudentService } from "../student/student";
 import { TeacherController, TeacherService } from "../teacher/teacher";
+import { TeacherAccountController, TeacherAccountService } from "../teacher/account-management";
 
 @Module({
-  controllers: [AuthController, StudentController, StudentFeedbackController, TeacherController, TeacherFeedbackController],
+  controllers: [AuthController, StudentController, StudentFeedbackController, TeacherController, TeacherAccountController, TeacherFeedbackController],
   providers: [
     { provide: AuthService, useValue: {} },
     { provide: StudentService, useValue: {} },
     { provide: FeedbackService, useValue: {} },
-    { provide: TeacherService, useValue: {} }
+    { provide: TeacherService, useValue: {} },
+    { provide: TeacherAccountService, useValue: {} }
   ]
 })
 class OpenApiTestModule {}
@@ -58,7 +60,12 @@ describe("Phase 1 OpenAPI request bodies", () => {
 
   it("documents auth request bodies with their required fields", () => {
     expect(requestSchemaAt(document, "/v1/auth/login", "post").required).toEqual(expect.arrayContaining(["username", "password"]));
-    expect(requestSchemaAt(document, "/v1/auth/register", "post").required).toEqual(expect.arrayContaining(["username", "password", "accountType"]));
+    const registration = requestSchemaAt(document, "/v1/auth/student/register", "post");
+    expect(registration.required).toEqual(expect.arrayContaining(["username", "password"]));
+    expect(registration.properties).not.toHaveProperty("accountType");
+    expect(operationAt(document, "/v1/auth/student/register", "post").security).toBeUndefined();
+    expect(document.paths["/v1/auth/register"]).toBeUndefined();
+    expect(document.paths["/v1/auth/teacher/register"]).toBeUndefined();
     expect(requestSchemaAt(document, "/v1/auth/refresh", "post").properties).toHaveProperty("refreshToken");
     expect(requestSchemaAt(document, "/v1/auth/logout", "post").properties).toHaveProperty("refreshToken");
   });
@@ -88,5 +95,13 @@ describe("Phase 1 OpenAPI request bodies", () => {
 
     const adjustment = requestSchemaAt(document, "/v1/teacher/score-adjustments", "post");
     expect(adjustment.required).toEqual(expect.arrayContaining(["targetLevel", "targetId", "adjustedScore", "reason", "expectedSupersedesAdjustmentId"]));
+
+    const createTeacher = requestSchemaAt(document, "/v1/teacher/accounts", "post");
+    expect(createTeacher.required).toEqual(expect.arrayContaining(["username", "displayName", "role", "password"]));
+    expect(createTeacher.properties).not.toHaveProperty("accountType");
+    expect(requestSchemaAt(document, "/v1/teacher/accounts/{id}/role", "patch").properties?.role).toMatchObject({ enum: ["INSTRUCTOR", "VIEWER"] });
+    expect(requestSchemaAt(document, "/v1/teacher/accounts/{id}/status", "patch").properties?.status).toMatchObject({ enum: ["ACTIVE", "DISABLED"] });
+    expect(requestSchemaAt(document, "/v1/teacher/accounts/{id}/reset-password", "post").properties).toHaveProperty("password");
+    expect(requestSchemaAt(document, "/v1/teacher/account/change-password", "post").required).toEqual(expect.arrayContaining(["currentPassword", "newPassword"]));
   });
 });

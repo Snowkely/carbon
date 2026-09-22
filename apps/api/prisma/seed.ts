@@ -2,6 +2,10 @@ import { PrismaClient, Prisma, AccountType, ContentStatus, FeedbackFormStatus, F
 import argon2 from "argon2";
 import { createHash } from "node:crypto";
 import { publishPackageAContent } from "./package-a-content";
+import { publishPackageB1Content } from "./package-b1-content";
+import { publishPackageB2Content } from "./package-b2-content";
+import { publishPackageB2HotfixContent } from "./package-b2-hotfix-content";
+import { publishPackageCContent } from "./package-c-content";
 
 const prisma = new PrismaClient();
 const sha = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -22,7 +26,8 @@ const cards = [
 ] as const;
 
 async function main() {
-  if (process.env.NODE_ENV === "production") throw new Error("Development seed is disabled in production");
+  const classroomBootstrap = process.env.CLASSROOM_BOOTSTRAP === "true";
+  if (process.env.NODE_ENV === "production" && !classroomBootstrap) throw new Error("Development seed is disabled in production");
   const school = await prisma.school.upsert({
     where: { code: "CARBON-DEMO" },
     update: {},
@@ -37,23 +42,25 @@ async function main() {
     }));
   }
 
-  const passwordHash = await argon2.hash("Carbon123!", { type: argon2.argon2id });
-  const teacher = await prisma.userAccount.upsert({
-    where: { username: "teacher.demo" }, update: {},
-    create: { username: "teacher.demo", passwordHash, accountType: AccountType.TEACHER }
-  });
-  await prisma.teacherProfile.upsert({
-    where: { userId: teacher.id }, update: {}, create: { userId: teacher.id, schoolId: school.id, name: "Demo Teacher" }
-  });
+  if (!classroomBootstrap) {
+    const passwordHash = await argon2.hash("Carbon123!", { type: argon2.argon2id });
+    const teacher = await prisma.userAccount.upsert({
+      where: { username: "teacher.demo" }, update: {},
+      create: { username: "teacher.demo", passwordHash, accountType: AccountType.TEACHER }
+    });
+    await prisma.teacherProfile.upsert({
+      where: { userId: teacher.id }, update: {}, create: { userId: teacher.id, schoolId: school.id, name: "Demo Teacher", platformRole: "OWNER" }
+    });
 
-  for (const [index, username] of ["student.alex", "student.ben"].entries()) {
-    const user = await prisma.userAccount.upsert({
-      where: { username }, update: {}, create: { username, passwordHash, accountType: AccountType.STUDENT }
-    });
-    await prisma.studentProfile.upsert({
-      where: { userId: user.id }, update: {},
-      create: { userId: user.id, schoolId: school.id, classId: classes[0]!.id, studentId: `S100${index + 1}`, name: index === 0 ? "Alex Chen" : "Ben Lee" }
-    });
+    for (const [index, username] of ["student.alex", "student.ben"].entries()) {
+      const user = await prisma.userAccount.upsert({
+        where: { username }, update: {}, create: { username, passwordHash, accountType: AccountType.STUDENT }
+      });
+      await prisma.studentProfile.upsert({
+        where: { userId: user.id }, update: {},
+        create: { userId: user.id, schoolId: school.id, classId: classes[0]!.id, studentId: `S100${index + 1}`, name: index === 0 ? "Alex Chen" : "Ben Lee" }
+      });
+    }
   }
 
   const versionPayload = { code: "v5.0-phase1-final", missions: 6, scoring: "final-frozen-2026-09-04" };
@@ -182,7 +189,15 @@ async function main() {
   }
 
   await publishPackageAContent(prisma);
-  console.log("Seed complete. Development demo accounts created.");
+  if (classroomBootstrap) {
+    await publishPackageB1Content(prisma);
+    await publishPackageB2Content(prisma);
+    await publishPackageB2HotfixContent(prisma);
+    await publishPackageCContent(prisma);
+    console.log("Classroom base data and published content initialized; no demo accounts created.");
+  } else {
+    console.log("Seed complete. Development demo accounts created.");
+  }
 }
 
 main().finally(() => prisma.$disconnect());

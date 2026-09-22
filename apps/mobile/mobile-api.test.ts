@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MobileApiError, MobileApiProtocolError, mobileApiRequest, parseMobileApiResponse } from "./mobile-api";
+import { CLASSROOM_SERVER_NOT_CONFIGURED, MobileApiConfigurationError, MobileApiError, MobileApiProtocolError, mobileApiRequest, parseMobileApiResponse } from "./mobile-api";
 
 const response = (status: number, body: string) => ({
   ok: status >= 200 && status < 300,
@@ -49,6 +49,16 @@ describe("Mobile API response parsing", () => {
 });
 
 describe("Mobile API requests", () => {
+  it("returns a controlled error before fetch when no classroom server is configured", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(mobileApiRequest(null, "/auth/login", { method: "POST" })).rejects.toMatchObject({
+      name: "MobileApiConfigurationError",
+      code: CLASSROOM_SERVER_NOT_CONFIGURED
+    });
+    await expect(mobileApiRequest(undefined, "/auth/login")).rejects.toBeInstanceOf(MobileApiConfigurationError);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
   it("keeps login as a JSON POST and returns its parsed token payload", async () => {
     const fetchMock = vi.fn().mockResolvedValue(response(200, '{"accessToken":"token","profileRequired":false}'));
     vi.stubGlobal("fetch", fetchMock);
@@ -61,6 +71,15 @@ describe("Mobile API requests", () => {
       method: "POST",
       headers: expect.objectContaining({ "Content-Type": "application/json" })
     }));
+  });
+
+  it("bypasses browser cache for dynamic student GET requests", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response(200, "[]"));
+    vi.stubGlobal("fetch", fetchMock);
+    await mobileApiRequest("https://classroom.example/v1", "/student/sessions/active", { token: "valid" });
+    expect(fetchMock).toHaveBeenCalledWith("https://classroom.example/v1/student/sessions/active", expect.objectContaining({ cache: "no-store" }));
+    await mobileApiRequest("https://classroom.example/v1", "/reference/schools");
+    expect(fetchMock.mock.calls[1]?.[1]).not.toHaveProperty("cache");
   });
 
   it("preserves the HTTP status on request failures", async () => {

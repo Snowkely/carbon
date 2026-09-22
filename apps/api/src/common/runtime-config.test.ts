@@ -35,7 +35,7 @@ describe("production runtime configuration", () => {
     expect(config.jwtRefreshSecret).toHaveLength(64);
     expect(config.jwtAccessSecret).not.toBe(config.jwtRefreshSecret);
     expect(config.corsAllowedOrigins).toEqual([]);
-    expect(corsOriginAllowed("http://192.168.1.103:8081", config)).toBe(true);
+    expect(corsOriginAllowed("http://192.168.1.25:8081", config)).toBe(true);
   });
 
   it("allows configured production and native origins but rejects other browsers", () => {

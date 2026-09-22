@@ -25,7 +25,7 @@ export type StudentFinalResult = {
 export type StudentHomeState = { session: StudentSession | null; missions: StudentMission[]; finalResult: StudentFinalResult | null };
 export type StudentRequest = (path: string, options?: RequestInit, responseContract?: { allowEmptyBody?: boolean }) => Promise<unknown>;
 
-export type StudentScreen = "login" | "profile" | "home" | "mission" | "result" | "history" | "feedback";
+export type StudentScreen = "login" | "registration" | "profile" | "home" | "mission" | "result" | "history" | "feedback" | "server";
 
 export function initializeStudentRuntime(): { token: null; screen: "login" } {
   return { token: null, screen: "login" };

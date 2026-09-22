@@ -75,6 +75,15 @@ enum WorkshopRole {
   VIEWER
 }
 
+enum TeacherAccountAuditAction {
+  TEACHER_CREATED
+  TEACHER_ROLE_CHANGED
+  TEACHER_DISABLED
+  TEACHER_ENABLED
+  TEACHER_PASSWORD_RESET
+  TEACHER_PASSWORD_CHANGED
+}
+
 enum SessionStatus {
   SCHEDULED
   ACTIVE
@@ -190,6 +199,7 @@ model UserAccount {
   passwordHash String          @map("password_hash") @db.VarChar(255)
   accountType  AccountType     @map("account_type")
   status       AccountStatus   @default(ACTIVE)
+  authVersion  Int             @default(0) @map("auth_version")
   createdAt    DateTime        @default(now()) @map("created_at") @db.Timestamptz
   updatedAt    DateTime        @updatedAt @map("updated_at") @db.Timestamptz
   student      StudentProfile?
@@ -223,6 +233,7 @@ model TeacherProfile {
   userId           String            @id @map("user_id") @db.Uuid
   schoolId         String            @map("school_id") @db.Uuid
   name             String            @db.VarChar(150)
+  platformRole     WorkshopRole      @default(VIEWER) @map("platform_role")
   user             UserAccount       @relation(fields: [userId], references: [id], onDelete: Cascade)
   school           School            @relation(fields: [schoolId], references: [id], onDelete: Restrict)
   memberships      WorkshopTeacher[]
@@ -231,9 +242,26 @@ model TeacherProfile {
   unlocks          MissionUnlock[]
   adjustments      ScoreAdjustment[]
   exports          ExportRecord[]
+  accountActions   TeacherAccountAudit[] @relation("TeacherAccountActor")
+  accountEvents    TeacherAccountAudit[] @relation("TeacherAccountTarget")
 
   @@index([schoolId])
   @@map("teacher_profile")
+}
+
+model TeacherAccountAudit {
+  id             String                    @id @default(uuid()) @db.Uuid
+  actorTeacherId String?                   @map("actor_teacher_id") @db.Uuid
+  targetTeacherId String                   @map("target_teacher_id") @db.Uuid
+  action         TeacherAccountAuditAction
+  details        Json                      @default("{}") @db.JsonB
+  createdAt      DateTime                  @default(now()) @map("created_at") @db.Timestamptz
+  actor          TeacherProfile?           @relation("TeacherAccountActor", fields: [actorTeacherId], references: [userId], onDelete: Restrict)
+  target         TeacherProfile            @relation("TeacherAccountTarget", fields: [targetTeacherId], references: [userId], onDelete: Restrict)
+
+  @@index([targetTeacherId, createdAt])
+  @@index([actorTeacherId, createdAt])
+  @@map("teacher_account_audit")
 }
 
 model AuthSession {

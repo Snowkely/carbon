@@ -10,6 +10,11 @@ describe("Teacher Web public configuration", () => {
     expect(resolveTeacherApiUrl(undefined, "development")).toBe("http://localhost:3001/v1");
   });
 
+  it("supports the classroom same-origin API without weakening arbitrary relative URLs", () => {
+    expect(resolveTeacherApiUrl("/v1", "production")).toBe("/v1");
+    expect(() => resolveTeacherApiUrl("/other", "production")).toThrow("exactly /v1");
+  });
+
   it("rejects credentials embedded in a public URL", () => {
     expect(() => resolveTeacherApiUrl("https://user:secret@example.com/v1", "production")).toThrow("without credentials");
   });

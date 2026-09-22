@@ -94,7 +94,17 @@ These credentials are development data only:
 | Student | `student.alex` | `Carbon123!` | Alex Chen / Class A |
 | Student | `student.ben` | `Carbon123!` | Ben Lee / Class A |
 
-To demonstrate first-login Profile Setup, register a STUDENT through `POST /v1/auth/register`, then use the mobile app to select a backend-managed School and Class.
+To demonstrate first-login Profile Setup, create a student through the Mobile registration screen or `POST /v1/auth/student/register`, then select a backend-managed School and Class. The public endpoint always creates a STUDENT and does not accept an account type or Teacher role.
+
+### First OWNER bootstrap
+
+Teacher accounts have no public registration endpoint. On a new installation with no platform OWNER, configure `DATABASE_URL`, `ADMIN_OWNER_USERNAME`, `ADMIN_OWNER_DISPLAY_NAME`, and `ADMIN_OWNER_PASSWORD`, then run `pnpm admin:create-owner`. With more than one active School, also configure `ADMIN_OWNER_SCHOOL_ID`. The command uses Argon2id, creates an audited OWNER transactionally, never prints password material, and refuses to run once any OWNER exists. In production it also requires the normal validated production runtime configuration.
+
+### Local classroom distribution
+
+For an internal same-Wi-Fi classroom deployment that requires only Docker Desktop on the target computer, see [docs/local-classroom.md](docs/local-classroom.md). Use `CarbonTrader-Start.cmd` on Windows or `CarbonTrader-Start.command` on macOS. This is separate from the production Compose configuration and is not an external deployment path.
+
+After bootstrap, OWNER can manage INSTRUCTOR and VIEWER accounts from **Teacher Management** in the existing Teacher Console. All Teacher roles can change their own password from **Account**. Temporary passwords are not forced through a first-login change because the prior schema had no compatible `mustChangePassword` state; the OWNER should communicate the temporary password securely and require the teacher to use **Account → Change Password** immediately.
 
 ## Verify
 

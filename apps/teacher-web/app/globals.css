@@ -9,6 +9,7 @@ button { cursor:pointer; }
 .loginArt p { max-width:580px; font-size:20px; opacity:.88; }
 .loginPanel { display:grid; place-items:center; padding:32px; }
 .loginCard { width:min(440px,100%); background:white; padding:34px; border:1px solid var(--border); border-radius:22px; box-shadow:0 24px 70px #082c1c20; }
+.authRestore { min-height:100vh; display:grid; place-items:center; padding:32px; background:var(--canvas); }
 .shell { min-height:100vh; display:grid; grid-template-columns:250px 1fr; }
 .sidebar { background:#053c21; color:white; padding:24px 16px; position:sticky; top:0; height:100vh; overflow:auto; }
 .brand { font-size:21px; font-weight:900; letter-spacing:.04em; margin:0 8px 4px; }
@@ -78,4 +79,16 @@ th { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacin
 .breakdownRow { display:flex; justify-content:space-between; gap:18px; padding:7px 0; }
 .breakdownRow small { display:block; margin-top:2px; color:var(--muted); font-weight:400; }
 .breakdownTotal { margin-top:7px; padding-top:12px; border-top:1px solid var(--border); color:var(--forest); font-size:17px; font-weight:900; }
+.classroomPage { max-width:1050px; margin:auto; padding:clamp(22px,5vw,64px); }
+.classroomHero { color:white; border-radius:22px; padding:32px; margin-bottom:20px; background:linear-gradient(135deg,#053c21,#075b2a 58%,#0d1f6d); }
+.classroomHero .eyebrow { color:#cce8d2; }
+.classroomGrid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; }
+.classroomQr { width:min(320px,100%); height:auto; align-self:center; border:1px solid var(--border); border-radius:12px; }
+.classroomPrimary { grid-column:1 / -1; border-color:#75ad7f; box-shadow:0 14px 36px #053c2114; }
+.stepBadge { display:grid; place-items:center; width:38px; height:38px; margin:0; border-radius:50%; color:white; background:var(--green); font-weight:800; font-size:1.15rem; }
+.installLink { display:inline-block; width:max-content; text-decoration:none; }
+.breakable { overflow-wrap:anywhere; }
+@media (max-width:760px) { .classroomGrid { grid-template-columns:1fr; } }
+.securityPanel { max-width:620px; margin:16px 0; }
+.securityAudit { margin-top:16px; }
 @media(max-width:900px) { .loginShell{grid-template-columns:1fr}.loginArt{display:none}.shell{grid-template-columns:1fr}.sidebar{position:static;height:auto}.navButton{width:auto}.content{padding:18px}.span4,.span6,.span8{grid-column:span 12}.topbar{padding:0 18px}.scoreFactsWide{grid-template-columns:1fr 1fr} }

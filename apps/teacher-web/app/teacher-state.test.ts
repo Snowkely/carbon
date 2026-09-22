@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { fetchTeacherDashboard, initializeTeacherRuntime, rosterLoadPresentation, teacherMissionPresentation, teacherMissionUnlockMessage, unlockTeacherMission } from "./teacher-state";
+import { fetchTeacherDashboard, rosterLoadPresentation, teacherMissionPresentation, teacherMissionUnlockMessage, unlockTeacherMission } from "./teacher-state";
 
 describe("Teacher Mission Control presentation", () => {
   it.each(["M2", "M3", "M4", "M5", "M6"])("offers a Session unlock for locked %s", (stableId) => {
@@ -61,11 +61,7 @@ describe("Teacher Mission Control presentation", () => {
   });
 });
 
-describe("Teacher fresh runtime authentication", () => {
-  it("always initializes a fresh Teacher application session at Login", () => {
-    expect(initializeTeacherRuntime()).toEqual({ token: null });
-  });
-
+describe("Teacher dashboard state", () => {
   it("reloads the real Workshop and ACTIVE Session after login", async () => {
     const serverState = [{ id: "w1", status: "READY", sessions: [{ id: "s1", status: "ACTIVE" }] }];
     const request = vi.fn().mockResolvedValue(serverState);

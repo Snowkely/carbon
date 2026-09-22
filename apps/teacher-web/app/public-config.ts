@@ -4,6 +4,8 @@ export function resolveTeacherApiUrl(value: string | undefined, environment = pr
   const configured = value?.trim();
   if (!configured && environment === "production") throw new Error("NEXT_PUBLIC_API_URL must be configured for a production Teacher Web build");
   const candidate = configured || DEVELOPMENT_API_URL;
+  if (candidate === "/v1") return candidate;
+  if (candidate.startsWith("/")) throw new Error("NEXT_PUBLIC_API_URL relative configuration must be exactly /v1");
   let url: URL;
   try { url = new URL(candidate); } catch { throw new Error("NEXT_PUBLIC_API_URL must be a valid HTTP(S) URL"); }
   if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) throw new Error("NEXT_PUBLIC_API_URL must be a public HTTP(S) URL without credentials");

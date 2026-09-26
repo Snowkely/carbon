@@ -1,6 +1,6 @@
 # Production operations
 
-This document is an operator checklist, not an automated deployment. Hardening C containerization and the isolated rehearsal/runbook are documented in [container-deployment.md](./container-deployment.md). The non-container principles below remain applicable.
+The concrete `/carbon-trader` deployment, Docker commands, first-OWNER procedure, host Nginx block, and upgrade safety rules are documented in [container-deployment.md](./container-deployment.md). The security principles below remain applicable.
 
 ## Runtime configuration
 
@@ -19,7 +19,8 @@ Keep production values in the deployment platform's secret/config store. Do not 
 | `PORT` | Server config | Optional (`3001`) | API listener port. |
 | `PRESENCE_OFFLINE_SECONDS` | Server config | Optional (`30`) | Teacher presence threshold. |
 | `HEALTH_TIMEOUT_MS` | Server config | Optional (`1500`) | Database/Redis readiness probe timeout. |
-| `NEXT_PUBLIC_API_URL` | Public build config | Required for production Teacher Web build | Public API URL ending in `/v1`. Never place secrets here. |
+| `PUBLIC_BASE_PATH` | Public build config | Required value: `/carbon-trader` for the target server | Configures the Next.js base path, Expo Student asset path, and Docker proxy scope. |
+| `NEXT_PUBLIC_API_URL` | Public build config | Derived by production Compose | Same-origin public API path `/carbon-trader/v1`. Never place secrets here. |
 | `EXPO_PUBLIC_API_URL` | Public build config | Required for Mobile builds | Public API URL ending in `/v1`. Never place secrets here. |
 
 First-OWNER bootstrap additionally reads `ADMIN_OWNER_USERNAME`, `ADMIN_OWNER_DISPLAY_NAME`, `ADMIN_OWNER_PASSWORD`, and optionally `ADMIN_OWNER_SCHOOL_ID` from the operator environment. These values are used only by `pnpm admin:create-owner`; never place the password on the command line or commit it to an environment file. The command refuses to create another OWNER when one already exists.

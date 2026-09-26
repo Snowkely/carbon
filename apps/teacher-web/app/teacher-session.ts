@@ -1,5 +1,6 @@
 import { TeacherApiError } from "./teacher-api";
 import type { TeacherConsoleView } from "./teacher-account-state";
+import { resolveTeacherBasePath } from "./public-config";
 
 export const TEACHER_ACCESS_TOKEN_KEY = "teacherAccessToken";
 export const TEACHER_REFRESH_TOKEN_KEY = "teacherRefreshToken";
@@ -62,8 +63,12 @@ export async function restoreTeacherSession(
 
 export type TeacherRoute = { view: TeacherConsoleView; workshopId: string | null; sessionId: string | null };
 
-export function parseTeacherRoute(pathname: string): TeacherRoute {
-  const parts = pathname.split("/").filter(Boolean).map(decodeURIComponent);
+export function parseTeacherRoute(pathname: string, publicBasePath = resolveTeacherBasePath()): TeacherRoute {
+  const basePath = resolveTeacherBasePath(publicBasePath);
+  const routePath = basePath && (pathname === basePath || pathname.startsWith(`${basePath}/`))
+    ? pathname.slice(basePath.length) || "/"
+    : pathname;
+  const parts = routePath.split("/").filter(Boolean).map(decodeURIComponent);
   if (parts[0] === "workshops" && parts[1]) {
     const view = parts[2] === "students" ? "Students" : parts[2] === "gradebook" ? "Gradebook" : parts[2] === "session" ? "Session Control" : "Workshops";
     return { view, workshopId: parts[1], sessionId: null };
@@ -75,15 +80,16 @@ export function parseTeacherRoute(pathname: string): TeacherRoute {
   return { view: "Dashboard", workshopId: null, sessionId: null };
 }
 
-export function teacherRoutePath(view: TeacherConsoleView, workshopId?: string | null, sessionId?: string | null): string {
+export function teacherRoutePath(view: TeacherConsoleView, workshopId?: string | null, sessionId?: string | null, publicBasePath = resolveTeacherBasePath()): string {
+  const basePath = resolveTeacherBasePath(publicBasePath);
   const workshop = workshopId ? encodeURIComponent(workshopId) : null;
   const session = sessionId ? encodeURIComponent(sessionId) : null;
-  if (view === "Workshops" && workshop) return `/workshops/${workshop}`;
-  if (view === "Students" && workshop) return `/workshops/${workshop}/students`;
-  if (view === "Gradebook" && workshop) return `/workshops/${workshop}/gradebook`;
-  if (view === "Session Control" && workshop) return `/workshops/${workshop}/session`;
-  if (view === "Live Monitor" && session) return `/sessions/${session}/monitor`;
-  if (view === "Mission Control" && session) return `/sessions/${session}/missions`;
-  if (view === "Feedback" && session) return `/sessions/${session}/feedback`;
-  return "/";
+  if (view === "Workshops" && workshop) return `${basePath}/workshops/${workshop}`;
+  if (view === "Students" && workshop) return `${basePath}/workshops/${workshop}/students`;
+  if (view === "Gradebook" && workshop) return `${basePath}/workshops/${workshop}/gradebook`;
+  if (view === "Session Control" && workshop) return `${basePath}/workshops/${workshop}/session`;
+  if (view === "Live Monitor" && session) return `${basePath}/sessions/${session}/monitor`;
+  if (view === "Mission Control" && session) return `${basePath}/sessions/${session}/missions`;
+  if (view === "Feedback" && session) return `${basePath}/sessions/${session}/feedback`;
+  return `${basePath}/`;
 }

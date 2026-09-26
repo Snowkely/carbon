@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { isClassroomStudentWeb, studentWebApiBase } from "./student-web";
+import { isClassroomStudentWeb, normalizeStudentPublicBasePath, studentWebApiBase } from "./student-web";
 
 const app = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
 const config = readFileSync(new URL("./app.config.ts", import.meta.url), "utf8");
@@ -14,16 +14,24 @@ describe("Student Web classroom runtime", () => {
     expect(studentWebApiBase(origin)).toBe(expected);
   });
 
+  it("derives the production API below the configured public base path", () => {
+    expect(studentWebApiBase("http://173.234.14.233", "/carbon-trader")).toBe("http://173.234.14.233/carbon-trader/v1");
+    expect(studentWebApiBase("https://example.com", "/carbon-trader")).toBe("https://example.com/carbon-trader/v1");
+    expect(normalizeStudentPublicBasePath("")).toBe("");
+    expect(() => normalizeStudentPublicBasePath("/carbon-trader/")).toThrow();
+  });
+
   it("uses Classroom Web only on web and does not require an environment API URL", () => {
     expect(isClassroomStudentWeb("web", true)).toBe(true);
     expect(isClassroomStudentWeb("android", true)).toBe(false);
-    expect(app).toContain("studentWebApiBase(window.location.origin)");
+    expect(app).toContain("studentWebApiBase(window.location.origin, Constants.expoConfig?.extra?.publicBasePath)");
     expect(app).toContain("CLASSROOM_WEB_API ?? await loadSavedClassroomApi(DEFAULT_API, CLASSROOM_BUILD)");
   });
 
   it("exports production assets below /student without changing native classroom mode", () => {
     expect(config).toContain('process.env.CLASSROOM_WEB_BUILD === "true"');
-    expect(config).toContain('baseUrl: "/student"');
+    expect(config).toContain("baseUrl: studentWebBasePath");
+    expect(config).toContain('publicBasePath: configuredBasePath');
     expect(config).toContain('process.env.CLASSROOM_BUILD === "true"');
     expect(app).toContain("!CLASSROOM_WEB &&");
   });

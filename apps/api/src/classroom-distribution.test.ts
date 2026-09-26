@@ -8,7 +8,7 @@ const production = readFileSync(resolve(root, "docker-compose.production.yml"), 
 const gitignore = readFileSync(resolve(root, ".gitignore"), "utf8");
 const packager = readFileSync(resolve(root, "scripts/package-classroom.ps1"), "utf8");
 const nginx = readFileSync(resolve(root, "deploy/local-classroom/nginx.conf"), "utf8");
-const studentNginx = readFileSync(resolve(root, "deploy/local-classroom/student-web.nginx.conf"), "utf8");
+const studentNginx = readFileSync(resolve(root, "deploy/nginx/student-web.nginx.conf"), "utf8");
 const studentDockerfile = readFileSync(resolve(root, "deploy/docker/student-web.Dockerfile"), "utf8");
 
 describe("local classroom distribution", () => {
@@ -31,13 +31,14 @@ describe("local classroom distribution", () => {
     expect(nginx).toContain("location = /student");
     expect(nginx).toContain("location ^~ /student/");
     expect(nginx).toContain("proxy_pass http://student_web");
-    expect(studentNginx).toContain("try_files $uri $uri/ /student/index.html");
+    expect(studentDockerfile).toContain('ARG PUBLIC_BASE_PATH=');
+    expect(studentNginx).toContain("try_files $uri $uri/ __PUBLIC_BASE_PATH__/student/index.html");
     expect(nginx).toContain("location = /v1/student/sessions/active");
     expect(nginx).toContain('add_header Cache-Control "no-store" always;');
   });
 
   it("keeps production ingress loopback-only", () => {
-    expect(production).toContain('"127.0.0.1:${INGRESS_PORT:-8088}:8080"');
+    expect(production).toContain('"127.0.0.1:${INGRESS_PORT:-8089}:8080"');
     expect(production).not.toContain("0.0.0.0:${INGRESS_PORT");
   });
 

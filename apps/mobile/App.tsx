@@ -25,7 +25,9 @@ import { backToStudentHome, buildFeedbackResponses, emptyFeedbackDraft, fetchStu
 const DEFAULT_API = process.env.EXPO_PUBLIC_API_URL?.trim() || null;
 const CLASSROOM_BUILD = Constants.expoConfig?.extra?.classroomBuild === true;
 const CLASSROOM_WEB = isClassroomStudentWeb(Platform.OS, Constants.expoConfig?.extra?.classroomWeb);
-const CLASSROOM_WEB_API = CLASSROOM_WEB && typeof window !== "undefined" ? studentWebApiBase(window.location.origin) : null;
+const CLASSROOM_WEB_API = CLASSROOM_WEB && typeof window !== "undefined"
+  ? studentWebApiBase(window.location.origin, Constants.expoConfig?.extra?.publicBasePath)
+  : null;
 let API: string | null = null;
 const INITIAL_STUDENT_RUNTIME = initializeStudentRuntime();
 const VALUE_CHAIN_NODES = ["Raw materials", "Dyeing", "Assembly", "Logistics", "Retail", "Use phase", "End of life"];

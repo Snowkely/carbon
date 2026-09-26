@@ -19,6 +19,14 @@ describe("classroom install page", () => {
     expect(urls.connectionDeepLink).toBe(`carbontrader://connect?api=${encodeURIComponent(api)}`);
   });
 
+  it("builds all production classroom links below /carbon-trader", () => {
+    const urls = classroomUrls("http://173.234.14.233", "/carbon-trader");
+    expect(urls.teacherWeb).toBe("http://173.234.14.233/carbon-trader/");
+    expect(urls.api).toBe("http://173.234.14.233/carbon-trader/v1");
+    expect(urls.studentWeb).toBe("http://173.234.14.233/carbon-trader/student");
+    expect(urls.install).toBe("http://173.234.14.233/carbon-trader/classroom");
+  });
+
   it("has safe empty states for optional Android and iOS installation links", () => {
     expect(client).toContain("Android test build not configured");
     expect(client).toContain("iOS TestFlight link not configured");

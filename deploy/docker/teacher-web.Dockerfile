@@ -19,11 +19,14 @@ RUN --mount=type=cache,id=carbon-pnpm,target=/pnpm/store pnpm install --frozen-l
 
 FROM dependencies AS build
 ARG NEXT_PUBLIC_API_URL
+ARG PUBLIC_BASE_PATH=/carbon-trader
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV PUBLIC_BASE_PATH=$PUBLIC_BASE_PATH
 ENV NEXT_OUTPUT_STANDALONE=true
 ENV NODE_ENV=production
 COPY . .
 RUN test -n "$NEXT_PUBLIC_API_URL"
+RUN echo "$PUBLIC_BASE_PATH" | grep -Eq '^/[A-Za-z0-9][A-Za-z0-9_-]*(/[A-Za-z0-9][A-Za-z0-9_-]*)*$'
 RUN pnpm --filter @carbon/teacher-web... build
 
 FROM node:22.20.0-alpine AS runtime

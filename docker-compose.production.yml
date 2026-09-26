@@ -1,4 +1,4 @@
-name: ${COMPOSE_PROJECT_NAME:-carbon-trader-production}
+name: ${COMPOSE_PROJECT_NAME:-carbon-trader}
 
 x-api-environment: &api-environment
   NODE_ENV: production
@@ -14,10 +14,8 @@ x-api-environment: &api-environment
   HEALTH_TIMEOUT_MS: ${HEALTH_TIMEOUT_MS:-1500}
 
 x-app-security: &app-security
-  security_opt:
-    - no-new-privileges:true
-  cap_drop:
-    - ALL
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: ["ALL"]
 
 services:
   postgres:
@@ -26,10 +24,8 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-carbon}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       POSTGRES_DB: ${POSTGRES_DB:-carbon_trader}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    networks:
-      - backend
+    volumes: ["postgres_data:/var/lib/postgresql/data"]
+    networks: [backend]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 10s
@@ -37,17 +33,14 @@ services:
       retries: 10
       start_period: 10s
     restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true
+    security_opt: ["no-new-privileges:true"]
 
   redis:
     image: redis:7-alpine
     command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
     user: redis
-    volumes:
-      - redis_data:/data
-    networks:
-      - backend
+    volumes: ["redis_data:/data"]
+    networks: [backend]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -56,43 +49,47 @@ services:
       start_period: 5s
     restart: unless-stopped
     read_only: true
-    tmpfs:
-      - /tmp
+    tmpfs: ["/tmp"]
     <<: *app-security
 
   migrate:
-    build:
-      context: .
-      dockerfile: deploy/docker/api.Dockerfile
+    image: ${COMPOSE_PROJECT_NAME:-carbon-trader}-api
+    build: { context: ., dockerfile: deploy/docker/api.Dockerfile }
     command: ["./node_modules/.bin/prisma", "migrate", "deploy", "--schema", "prisma/schema.prisma"]
     environment:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
     depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - backend
+      postgres: { condition: service_healthy }
+    networks: [backend]
     restart: "no"
     read_only: true
-    tmpfs:
-      - /tmp
+    tmpfs: ["/tmp"]
+    <<: *app-security
+
+  initialize:
+    image: ${COMPOSE_PROJECT_NAME:-carbon-trader}-api
+    build: { context: ., dockerfile: deploy/docker/api.Dockerfile }
+    command: ["./node_modules/.bin/tsx", "prisma/seed.ts"]
+    environment:
+      <<: *api-environment
+      CLASSROOM_BOOTSTRAP: "true"
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    networks: [backend]
+    restart: "no"
+    read_only: true
+    tmpfs: ["/tmp"]
     <<: *app-security
 
   api:
-    build:
-      context: .
-      dockerfile: deploy/docker/api.Dockerfile
+    image: ${COMPOSE_PROJECT_NAME:-carbon-trader}-api
+    build: { context: ., dockerfile: deploy/docker/api.Dockerfile }
     environment: *api-environment
     depends_on:
-      migrate:
-        condition: service_completed_successfully
-      redis:
-        condition: service_healthy
-    networks:
-      - backend
-      - edge
-    expose:
-      - "3001"
+      initialize: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    networks: [backend, edge]
+    expose: ["3001"]
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 15s
@@ -101,8 +98,7 @@ services:
       start_period: 20s
     restart: unless-stopped
     read_only: true
-    tmpfs:
-      - /tmp
+    tmpfs: ["/tmp"]
     <<: *app-security
 
   teacher-web:
@@ -110,58 +106,94 @@ services:
       context: .
       dockerfile: deploy/docker/teacher-web.Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?NEXT_PUBLIC_API_URL is required}
+        PUBLIC_BASE_PATH: ${PUBLIC_BASE_PATH:-/carbon-trader}
+        NEXT_PUBLIC_API_URL: ${PUBLIC_BASE_PATH:-/carbon-trader}/v1
     depends_on:
-      api:
-        condition: service_healthy
-    networks:
-      - edge
-    expose:
-      - "3000"
+      api: { condition: service_healthy }
+    networks: [edge]
+    expose: ["3000"]
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000${PUBLIC_BASE_PATH:-/carbon-trader}/').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 15s
       timeout: 5s
       retries: 8
       start_period: 20s
     restart: unless-stopped
     read_only: true
-    tmpfs:
-      - /tmp
-      - /app/apps/teacher-web/.next/cache
+    tmpfs: ["/tmp", "/app/apps/teacher-web/.next/cache"]
+    <<: *app-security
+
+  student-web:
+    build:
+      context: .
+      dockerfile: deploy/docker/student-web.Dockerfile
+      args:
+        PUBLIC_BASE_PATH: ${PUBLIC_BASE_PATH:-/carbon-trader}
+    networks: [edge]
+    expose: ["8080"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080${PUBLIC_BASE_PATH:-/carbon-trader}/student"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+    restart: unless-stopped
+    read_only: true
+    tmpfs: ["/tmp", "/var/run"]
     <<: *app-security
 
   reverse-proxy:
-    image: nginxinc/nginx-unprivileged:1.27-alpine
+    build:
+      context: .
+      dockerfile: deploy/docker/reverse-proxy.Dockerfile
+      args:
+        PUBLIC_BASE_PATH: ${PUBLIC_BASE_PATH:-/carbon-trader}
     depends_on:
-      api:
-        condition: service_healthy
-      teacher-web:
-        condition: service_healthy
-    ports:
-      - "127.0.0.1:${INGRESS_PORT:-8088}:8080"
-    networks:
-      - edge
-    volumes:
-      - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./deploy/nginx/proxy_params:/etc/nginx/proxy_params:ro
-      - ./deploy/nginx/upstream-unavailable.html:/usr/share/nginx/html/upstream-unavailable.html:ro
+      api: { condition: service_healthy }
+      teacher-web: { condition: service_healthy }
+      student-web: { condition: service_healthy }
+    ports: ["127.0.0.1:${INGRESS_PORT:-8089}:8080"]
+    networks: [edge]
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/proxy-health"]
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080${PUBLIC_BASE_PATH:-/carbon-trader}/proxy-health"]
       interval: 15s
       timeout: 5s
       retries: 5
       start_period: 5s
     restart: unless-stopped
     read_only: true
-    tmpfs:
-      - /tmp
-      - /var/run
+    tmpfs: ["/tmp", "/var/run"]
+    <<: *app-security
+
+  admin-owner-status:
+    profiles: [admin]
+    image: ${COMPOSE_PROJECT_NAME:-carbon-trader}-api
+    build: { context: ., dockerfile: deploy/docker/api.Dockerfile }
+    command: ["./node_modules/.bin/tsx", "prisma/owner-status.ts"]
+    environment: *api-environment
+    networks: [backend]
+    read_only: true
+    tmpfs: ["/tmp"]
+    <<: *app-security
+
+  admin-create-owner:
+    profiles: [admin]
+    image: ${COMPOSE_PROJECT_NAME:-carbon-trader}-api
+    build: { context: ., dockerfile: deploy/docker/api.Dockerfile }
+    command: ["./node_modules/.bin/tsx", "prisma/create-owner.ts"]
+    environment:
+      <<: *api-environment
+      ADMIN_OWNER_USERNAME: ${ADMIN_OWNER_USERNAME:-}
+      ADMIN_OWNER_DISPLAY_NAME: ${ADMIN_OWNER_DISPLAY_NAME:-}
+      ADMIN_OWNER_PASSWORD: ${ADMIN_OWNER_PASSWORD:-}
+      ADMIN_OWNER_SCHOOL_ID: ${ADMIN_OWNER_SCHOOL_ID:-}
+    networks: [backend]
+    read_only: true
+    tmpfs: ["/tmp"]
     <<: *app-security
 
 networks:
-  backend:
-    internal: true
+  backend: { internal: true }
   edge:
 
 volumes:

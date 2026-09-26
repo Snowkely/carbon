@@ -1,6 +1,11 @@
 export default () => {
   const classroom = process.env.CLASSROOM_BUILD === "true";
   const classroomWeb = process.env.CLASSROOM_WEB_BUILD === "true";
+  const configuredBasePath = process.env.PUBLIC_BASE_PATH?.trim() ?? "";
+  if (configuredBasePath && (!/^\/[a-z0-9-]+(?:\/[a-z0-9-]+)*$/i.test(configuredBasePath) || configuredBasePath.endsWith("/"))) {
+    throw new Error("PUBLIC_BASE_PATH must be empty or an absolute path without a trailing slash");
+  }
+  const studentWebBasePath = `${configuredBasePath}/student`;
 
   return {
     name: "Carbon Trader I",
@@ -15,6 +20,7 @@ export default () => {
     extra: {
       classroomBuild: classroom,
       classroomWeb,
+      publicBasePath: configuredBasePath,
       eas: {
         projectId: "ba6465df-cac8-486d-ab31-fb5ef6a23e72"
       }
@@ -60,7 +66,7 @@ export default () => {
       backgroundColor: "#f7faf7"
     },
 
-    experiments: classroomWeb ? { baseUrl: "/student" } : undefined,
+    experiments: classroomWeb ? { baseUrl: studentWebBasePath } : undefined,
 
     plugins: [
       "expo-status-bar",

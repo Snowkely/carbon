@@ -82,6 +82,13 @@ describe("Teacher route restoration", () => {
     expect(parseTeacherRoute("/workshops/workshop-1/students").view).toBe("Students");
     expect(parseTeacherRoute("/workshops/workshop-1/gradebook").view).toBe("Gradebook");
   });
+
+  it("parses and creates deep routes below the production base path", () => {
+    expect(parseTeacherRoute("/carbon-trader/workshops/workshop-1/students", "/carbon-trader")).toEqual({ view: "Students", workshopId: "workshop-1", sessionId: null });
+    expect(parseTeacherRoute("/carbon-trader/sessions/session-1/monitor", "/carbon-trader")).toEqual({ view: "Live Monitor", workshopId: null, sessionId: "session-1" });
+    expect(teacherRoutePath("Gradebook", "workshop-1", null, "/carbon-trader")).toBe("/carbon-trader/workshops/workshop-1/gradebook");
+    expect(teacherRoutePath("Mission Control", null, "session-1", "/carbon-trader")).toBe("/carbon-trader/sessions/session-1/missions");
+  });
 });
 
 describe("Teacher manual refresh", () => {

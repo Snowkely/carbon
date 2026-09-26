@@ -40,7 +40,7 @@ export function ClassroomClient({ androidUrl, androidVersion, iosUrl }: Props) {
       </article>
       <article className="card stack">
         <p className="stepBadge">A</p><h2>Android App download</h2>
-        <p><strong>Teacher Web</strong><br/><a href={urls.origin}>{urls.origin}</a></p>
+        <p><strong>Teacher Web</strong><br/><a href={urls.teacherWeb}>{urls.teacherWeb}</a></p>
         {androidUrl ? <><a className="button installLink" href={androidUrl} download>Download Android App</a>{androidVersion && <p><strong>Version:</strong> {androidVersion}</p>}<p><strong>File:</strong> CarbonTrader.apk</p></> : <p className="notice">Android test build not configured.</p>}
         <h3>iOS</h3>{iosUrl ? <a className="button installLink" href={iosUrl}>Open TestFlight</a> : <p className="notice">iOS TestFlight link not configured.</p>}
       </article>
